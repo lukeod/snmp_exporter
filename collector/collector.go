@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/snmp_exporter/config"
+	"github.com/prometheus/snmp_exporter/oid"
 	"github.com/prometheus/snmp_exporter/scraper"
 )
 
@@ -61,29 +62,7 @@ var combinedTypeMapping = map[string]map[int]string{
 	},
 }
 
-func oidToList(oid string) []int {
-	result := make([]int, 0, strings.Count(oid, ".")+1)
-	for x := range strings.SplitSeq(oid, ".") {
-		o, _ := strconv.Atoi(x)
-		result = append(result, o)
-	}
-	return result
-}
 
-func listToOid(l []int) string {
-	if len(l) == 0 {
-		return ""
-	}
-	var result strings.Builder
-	result.Grow(len(l) * 4) // Estimate 3 digits + dot per number
-	for i, o := range l {
-		if i > 0 {
-			result.WriteByte('.')
-		}
-		result.WriteString(strconv.Itoa(o))
-	}
-	return result.String()
-}
 
 type ScrapeResults struct {
 	pdus []gosnmp.SnmpPDU
@@ -251,28 +230,7 @@ func addAllowedIndices(filter config.DynamicFilter, allowedList []string, logger
 	return newCfg
 }
 
-type MetricNode struct {
-	metric *config.Metric
 
-	children map[int]*MetricNode
-}
-
-// Build a tree of metrics from the config, for fast lookup when there's lots of them.
-func buildMetricTree(metrics []*config.Metric) *MetricNode {
-	metricTree := &MetricNode{children: map[int]*MetricNode{}}
-	for _, metric := range metrics {
-		head := metricTree
-		for _, o := range oidToList(metric.Oid) {
-			_, ok := head.children[o]
-			if !ok {
-				head.children[o] = &MetricNode{children: map[int]*MetricNode{}}
-			}
-			head = head.children[o]
-		}
-		head.metric = metric
-	}
-	return metricTree
-}
 
 type Metrics struct {
 	SNMPCollectionDuration *prometheus.HistogramVec
@@ -397,20 +355,20 @@ func (c Collector) collect(ch chan<- prometheus.Metric, logger *slog.Logger, cli
 		oidToPdu[pdu.Name[1:]] = pdu
 	}
 
-	metricTree := buildMetricTree(module.Metrics)
+	metricTree := module.MetricTree
 	// Look for metrics that match each pdu.
-	for oid, pdu := range oidToPdu {
+	for o, pdu := range oidToPdu {
 		head := metricTree
-		oidList := oidToList(oid)
+		oidList := oid.ToList(o)
 		for i, o := range oidList {
 			var ok bool
-			head, ok = head.children[o]
+			head, ok = head.Children[o]
 			if !ok {
 				break
 			}
-			if head.metric != nil {
+			if head.Metric != nil {
 				// Found a match.
-				samples := pduToSamples(oidList[i+1:], &pdu, head.metric, oidToPdu, logger, c.metrics)
+				samples := pduToSamples(oidList[i+1:], &pdu, head.Metric, oidToPdu, logger, c.metrics)
 				for _, sample := range samples {
 					ch <- sample
 				}
@@ -646,7 +604,7 @@ func pduToSamples(indexOids []int, pdu *gosnmp.SnmpPDU, metric *config.Metric, o
 
 		if typeMapping, ok := combinedTypeMapping[metricType]; ok {
 			// Lookup associated sub type in previous object.
-			prevOid := fmt.Sprintf("%s.%s", getPrevOid(metric.Oid), listToOid(indexOids))
+			prevOid := fmt.Sprintf("%s.%s", getPrevOid(metric.Oid), oid.FromList(indexOids))
 			if prevPdu, ok := oidToPdu[prevOid]; ok {
 				val := int(getPduValue(&prevPdu))
 				if t, ok := typeMapping[val]; ok {
@@ -795,22 +753,7 @@ func bits(metric *config.Metric, value any, labelnames, labelvalues []string) []
 
 // Right pad oid with zeros, and split at the given point.
 // Some routers exclude trailing 0s in responses.
-func splitOid(oid []int, count int) ([]int, []int) {
-	head := make([]int, count)
-	tailCapacity := len(oid) - count
-	if tailCapacity < 0 {
-		tailCapacity = 0
-	}
-	tail := make([]int, 0, tailCapacity)
-	for i, v := range oid {
-		if i < count {
-			head[i] = v
-		} else {
-			tail = append(tail, v)
-		}
-	}
-	return head, tail
-}
+
 
 // This mirrors decodeValue in gosnmp's helper.go.
 func pduValueAsString(pdu *gosnmp.SnmpPDU, typ string, metrics Metrics) string {
@@ -861,10 +804,10 @@ func pduValueAsString(pdu *gosnmp.SnmpPDU, typ string, metrics Metrics) string {
 // Returns the string, the oids that were used and the oids left over.
 func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool, enumValues map[int]string) (string, []int, []int) {
 	if typeMapping, ok := combinedTypeMapping[typ]; ok {
-		subOid, valueOids := splitOid(indexOids, 2)
+		subOid, valueOids := oid.Split(indexOids, 2)
 		if typ == "InetAddressMissingSize" {
 			// The size of the main index value is missing.
-			subOid, valueOids = splitOid(indexOids, 1)
+			subOid, valueOids = oid.Split(indexOids, 1)
 		}
 		var str string
 		var used, remaining []int
@@ -883,10 +826,10 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 	switch typ {
 	case "Integer32", "Integer", "gauge", "counter":
 		// Extract the oid for this index, and keep the remainder for the next index.
-		subOid, indexOids := splitOid(indexOids, 1)
+		subOid, indexOids := oid.Split(indexOids, 1)
 		return fmt.Sprintf("%d", subOid[0]), subOid, indexOids
 	case "PhysAddress48":
-		subOid, indexOids := splitOid(indexOids, 6)
+		subOid, indexOids := oid.Split(indexOids, 6)
 		parts := make([]string, 6)
 		for i, o := range subOid {
 			parts[i] = fmt.Sprintf("%02X", o)
@@ -901,10 +844,10 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 			length = len(indexOids)
 		}
 		if length == 0 {
-			subOid, indexOids = splitOid(indexOids, 1)
+			subOid, indexOids = oid.Split(indexOids, 1)
 			length = subOid[0]
 		}
-		content, indexOids := splitOid(indexOids, length)
+		content, indexOids := oid.Split(indexOids, length)
 		subOid = append(subOid, content...)
 		parts := make([]byte, length)
 		for i, o := range content {
@@ -921,10 +864,10 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 			length = len(indexOids)
 		}
 		if length == 0 {
-			subOid, indexOids = splitOid(indexOids, 1)
+			subOid, indexOids = oid.Split(indexOids, 1)
 			length = subOid[0]
 		}
-		content, indexOids := splitOid(indexOids, length)
+		content, indexOids := oid.Split(indexOids, length)
 		subOid = append(subOid, content...)
 		parts := make([]byte, length)
 		for i, o := range content {
@@ -933,21 +876,21 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 		// ASCII, so can convert staight to utf-8.
 		return string(parts), subOid, indexOids
 	case "InetAddressIPv4":
-		subOid, indexOids := splitOid(indexOids, 4)
+		subOid, indexOids := oid.Split(indexOids, 4)
 		parts := make([]string, 4)
 		for i, o := range subOid {
 			parts[i] = strconv.Itoa(o)
 		}
 		return strings.Join(parts, "."), subOid, indexOids
 	case "InetAddressIPv6":
-		subOid, indexOids := splitOid(indexOids, 16)
+		subOid, indexOids := oid.Split(indexOids, 16)
 		parts := make([]any, 16)
 		for i, o := range subOid {
 			parts[i] = o
 		}
 		return fmt.Sprintf("%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X", parts...), subOid, indexOids
 	case "EnumAsInfo":
-		subOid, indexOids := splitOid(indexOids, 1)
+		subOid, indexOids := oid.Split(indexOids, 1)
 		value, ok := enumValues[subOid[0]]
 		if ok {
 			return value, subOid, indexOids
@@ -986,17 +929,17 @@ func indexesToLabels(indexOids []int, metric *config.Metric, oidToPdu map[string
 			delete(labels, lookup.Labelname)
 			continue
 		}
-		oid := lookup.Oid
+		lookupOid := lookup.Oid
 		for _, label := range lookup.Labels {
-			oid = fmt.Sprintf("%s.%s", oid, listToOid(labelOids[label]))
+			lookupOid = fmt.Sprintf("%s.%s", lookupOid, oid.FromList(labelOids[label]))
 		}
-		if pdu, ok := oidToPdu[oid]; ok {
+		if pdu, ok := oidToPdu[lookupOid]; ok {
 			t := lookup.Type
 			if typeMapping, ok := combinedTypeMapping[lookup.Type]; ok {
 				// Lookup associated sub type in previous object.
 				prevOid := getPrevOid(lookup.Oid)
 				for _, label := range lookup.Labels {
-					prevOid = fmt.Sprintf("%s.%s", prevOid, listToOid(labelOids[label]))
+					prevOid = fmt.Sprintf("%s.%s", prevOid, oid.FromList(labelOids[label]))
 				}
 				if prevPdu, ok := oidToPdu[prevOid]; ok {
 					val := int(getPduValue(&prevPdu))

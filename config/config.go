@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gosnmp/gosnmp"
+	"github.com/prometheus/snmp_exporter/oid"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -86,6 +87,11 @@ func LoadFile(logger *slog.Logger, paths []string, expandEnvVars bool) (*Config,
 		}
 	}
 
+	// Build the metric tree for each module.
+	for _, module := range cfg.Modules {
+		module.MetricTree = BuildMetricTree(module.Metrics)
+	}
+
 	return cfg, nil
 }
 
@@ -136,6 +142,7 @@ type Module struct {
 	Metrics    []*Metric       `yaml:"metrics"`
 	WalkParams WalkParams      `yaml:",inline"`
 	Filters    []DynamicFilter `yaml:"filters,omitempty"`
+	MetricTree *MetricNode     `yaml:"-"`
 }
 
 func (c *Module) UnmarshalYAML(unmarshal func(any) error) error {
@@ -366,4 +373,27 @@ func substituteEnvVariables(value string) (string, error) {
 		return "", errors.New(value + " environment variable not found")
 	}
 	return result, nil
+}
+
+type MetricNode struct {
+	Metric *Metric
+
+	Children map[int]*MetricNode
+}
+
+// Build a tree of metrics from the config, for fast lookup when there's lots of them.
+func BuildMetricTree(metrics []*Metric) *MetricNode {
+	metricTree := &MetricNode{Children: map[int]*MetricNode{}}
+	for _, metric := range metrics {
+		head := metricTree
+		for _, o := range oid.ToList(metric.Oid) {
+			_, ok := head.Children[o]
+			if !ok {
+				head.Children[o] = &MetricNode{Children: map[int]*MetricNode{}}
+			}
+			head = head.Children[o]
+		}
+		head.Metric = metric
+	}
+	return metricTree
 }
