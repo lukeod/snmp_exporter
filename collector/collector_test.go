@@ -429,10 +429,11 @@ func TestPduToSample(t *testing.T) {
 			oidToPdu:        map[string]gosnmp.SnmpPDU{"1.41.2": {Value: 2}},
 			expectedMetrics: []string{`Desc{fqName: "test_metric", help: "Help string", constLabels: {}, variableLabels: {test_metric}} label:{name:"test_metric" value:"0405:0607:0809:0A0B:0C0D:0E0F:1011:1213"} gauge:{value:1}`},
 		},
+		// InetAddress with type=3 (ipv4z) - 8 bytes
 		{
 			pdu: &gosnmp.SnmpPDU{
 				Name:  "1.42.2",
-				Value: []byte{4, 5, 6, 7, 8},
+				Value: []byte{192, 168, 1, 1, 0, 0, 0, 5},
 			},
 			indexOids: []int{2},
 			metric: &config.Metric{
@@ -442,7 +443,23 @@ func TestPduToSample(t *testing.T) {
 				Help: "Help string",
 			},
 			oidToPdu:        map[string]gosnmp.SnmpPDU{"1.41.2": {Value: 3}},
-			expectedMetrics: []string{`Desc{fqName: "test_metric", help: "Help string", constLabels: {}, variableLabels: {test_metric}} label:{name:"test_metric" value:"0x0405060708"} gauge:{value:1}`},
+			expectedMetrics: []string{`Desc{fqName: "test_metric", help: "Help string", constLabels: {}, variableLabels: {test_metric}} label:{name:"test_metric" value:"192.168.1.1%5"} gauge:{value:1}`},
+		},
+		// InetAddress with type=4 (ipv6z) - 20 bytes
+		{
+			pdu: &gosnmp.SnmpPDU{
+				Name:  "1.42.2",
+				Value: []byte{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1},
+			},
+			indexOids: []int{2},
+			metric: &config.Metric{
+				Name: "test_metric",
+				Oid:  "1.42",
+				Type: "InetAddress",
+				Help: "Help string",
+			},
+			oidToPdu:        map[string]gosnmp.SnmpPDU{"1.41.2": {Value: 4}},
+			expectedMetrics: []string{`Desc{fqName: "test_metric", help: "Help string", constLabels: {}, variableLabels: {test_metric}} label:{name:"test_metric" value:"2001:0DB8:0000:0000:0000:0000:0000:0001%1"} gauge:{value:1}`},
 		},
 		{
 			pdu: &gosnmp.SnmpPDU{
@@ -780,6 +797,42 @@ func TestPduValueAsString(t *testing.T) {
 			typ:    "InetAddressIPv6",
 			result: "0102:0304:0506:0708:090A:0B0C:0D0E:0F10",
 		},
+		// InetAddressIPv4z: 8 bytes (4 IP + 4 zone)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{1, 2, 3, 4, 0, 0, 0, 5}},
+			typ:    "InetAddressIPv4z",
+			result: "1.2.3.4%5",
+		},
+		// InetAddressIPv6z: 20 bytes (16 IP + 4 zone)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 0, 1}},
+			typ:    "InetAddressIPv6z",
+			result: "0102:0304:0506:0708:090A:0B0C:0D0E:0F10%1",
+		},
+		// TransportAddressIPv4: 6 bytes (4 IP + 2 port)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{192, 168, 1, 1, 0x1F, 0x90}},
+			typ:    "TransportAddressIPv4",
+			result: "192.168.1.1:8080",
+		},
+		// TransportAddressIPv6: 18 bytes (16 IP + 2 port)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0x00, 0x50}},
+			typ:    "TransportAddressIPv6",
+			result: "[2001:0DB8:0000:0000:0000:0000:0000:0001]:80",
+		},
+		// TransportAddressIPv4z: 10 bytes (4 IP + 4 zone + 2 port)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{192, 168, 1, 1, 0, 0, 0, 2, 0x1F, 0x90}},
+			typ:    "TransportAddressIPv4z",
+			result: "192.168.1.1%2:8080",
+		},
+		// TransportAddressIPv6z: 22 bytes (16 IP + 4 zone + 2 port)
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0x00, 0x50}},
+			typ:    "TransportAddressIPv6z",
+			result: "[2001:0DB8:0000:0000:0000:0000:0000:0001%3]:80",
+		},
 		{
 			pdu:    &gosnmp.SnmpPDU{Value: []byte{2, 0}},
 			typ:    "Bits",
@@ -1065,7 +1118,7 @@ func TestIndexesToLabels(t *testing.T) {
 			oid:      []int{3, 5, 192, 168, 1, 2, 5},
 			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddress"}}},
 			oidToPdu: map[string]gosnmp.SnmpPDU{},
-			result:   map[string]string{"l": "0x0305C0A8010205"},
+			result:   map[string]string{"l": "192.168.1.2%83886080"},
 		},
 		{
 			oid:      []int{1, 192, 168, 1, 2},
@@ -1090,6 +1143,62 @@ func TestIndexesToLabels(t *testing.T) {
 			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddressMissingSize"}}},
 			oidToPdu: map[string]gosnmp.SnmpPDU{},
 			result:   map[string]string{"l": "0x03C0A8010205"},
+		},
+		// InetAddressIPv4z via InetAddress type=3
+		{
+			oid:      []int{3, 8, 192, 168, 1, 1, 0, 0, 0, 5},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddress"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "192.168.1.1%5"},
+		},
+		// InetAddressIPv6z via InetAddress type=4
+		{
+			oid:      []int{4, 20, 32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddress"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "2001:0DB8:0000:0000:0000:0000:0000:0001%1"},
+		},
+		// Direct InetAddressIPv4z index (8 bytes, no type/size prefix)
+		{
+			oid:      []int{192, 168, 1, 1, 0, 0, 0, 5},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddressIPv4z"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "192.168.1.1%5"},
+		},
+		// Direct InetAddressIPv6z index (20 bytes)
+		{
+			oid:      []int{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "InetAddressIPv6z"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "2001:0DB8:0000:0000:0000:0000:0000:0001%1"},
+		},
+		// TransportAddressIPv4 index (6 bytes)
+		{
+			oid:      []int{192, 168, 1, 1, 0x1F, 0x90},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "TransportAddressIPv4"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "192.168.1.1:8080"},
+		},
+		// TransportAddressIPv6 index (18 bytes)
+		{
+			oid:      []int{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0x00, 0x50},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "TransportAddressIPv6"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "[2001:0DB8:0000:0000:0000:0000:0000:0001]:80"},
+		},
+		// TransportAddressIPv4z index (10 bytes)
+		{
+			oid:      []int{192, 168, 1, 1, 0, 0, 0, 2, 0x1F, 0x90},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "TransportAddressIPv4z"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "192.168.1.1%2:8080"},
+		},
+		// TransportAddressIPv6z index (22 bytes)
+		{
+			oid:      []int{32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0x00, 0x50},
+			metric:   config.Metric{Indexes: []*config.Index{{Labelname: "l", Type: "TransportAddressIPv6z"}}},
+			oidToPdu: map[string]gosnmp.SnmpPDU{},
+			result:   map[string]string{"l": "[2001:0DB8:0000:0000:0000:0000:0000:0001%3]:80"},
 		},
 		{
 			oid: []int{1, 1, 1, 1},

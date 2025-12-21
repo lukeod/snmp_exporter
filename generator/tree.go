@@ -140,7 +140,14 @@ func prepareTree(nodes *Node, logger *slog.Logger) map[string]*Node {
 			n.Type = "NTPTimeStamp"
 		}
 		// Convert RFC 4001 InetAddress types textual convention to type.
-		if n.TextualConvention == "InetAddressIPv4" || n.TextualConvention == "InetAddressIPv6" || n.TextualConvention == "InetAddress" {
+		if n.TextualConvention == "InetAddressIPv4" || n.TextualConvention == "InetAddressIPv6" ||
+			n.TextualConvention == "InetAddressIPv4z" || n.TextualConvention == "InetAddressIPv6z" ||
+			n.TextualConvention == "InetAddress" {
+			n.Type = n.TextualConvention
+		}
+		// Convert RFC 3419 TransportAddress types textual convention to type.
+		if n.TextualConvention == "TransportAddressIPv4" || n.TextualConvention == "TransportAddressIPv6" ||
+			n.TextualConvention == "TransportAddressIPv4z" || n.TextualConvention == "TransportAddressIPv6z" {
 			n.Type = n.TextualConvention
 		}
 		// Convert LLDP-MIB LldpPortId type textual convention to type.
@@ -167,7 +174,9 @@ func metricType(t string) (string, bool) {
 		return "Bits", true
 	case "InetAddressIPv4", "IpAddr", "IPADDR", "NETADDR":
 		return "InetAddressIPv4", true
-	case "PhysAddress48", "DisplayString", "Float", "Double", "InetAddressIPv6":
+	case "PhysAddress48", "DisplayString", "Float", "Double", "InetAddressIPv6",
+		"InetAddressIPv4z", "InetAddressIPv6z",
+		"TransportAddressIPv4", "TransportAddressIPv6", "TransportAddressIPv4z", "TransportAddressIPv6z":
 		return t, true
 	case "DateAndTime":
 		return t, true

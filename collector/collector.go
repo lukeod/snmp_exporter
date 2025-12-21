@@ -47,6 +47,8 @@ var combinedTypeMapping = map[string]map[int]string{
 	"InetAddress": {
 		1: "InetAddressIPv4",
 		2: "InetAddressIPv6",
+		3: "InetAddressIPv4z",
+		4: "InetAddressIPv6z",
 	},
 	"InetAddressMissingSize": {
 		1: "InetAddressIPv4",
@@ -948,6 +950,59 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 			parts[i] = o
 		}
 		return fmt.Sprintf("%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X", parts...), subOid, indexOids
+	case "InetAddressIPv4z":
+		// 8 bytes: 4 IP + 4 zone index (RFC 4001)
+		subOid, indexOids := splitOid(indexOids, 8)
+		ip := fmt.Sprintf("%d.%d.%d.%d", subOid[0], subOid[1], subOid[2], subOid[3])
+		zone := uint32(subOid[4])<<24 | uint32(subOid[5])<<16 | uint32(subOid[6])<<8 | uint32(subOid[7])
+		return fmt.Sprintf("%s%%%d", ip, zone), subOid, indexOids
+	case "InetAddressIPv6z":
+		// 20 bytes: 16 IP + 4 zone index (RFC 4001)
+		subOid, indexOids := splitOid(indexOids, 20)
+		parts := make([]any, 16)
+		for i := 0; i < 16; i++ {
+			parts[i] = subOid[i]
+		}
+		zone := uint32(subOid[16])<<24 | uint32(subOid[17])<<16 | uint32(subOid[18])<<8 | uint32(subOid[19])
+		return fmt.Sprintf("%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X%%%d",
+			parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7],
+			parts[8], parts[9], parts[10], parts[11], parts[12], parts[13], parts[14], parts[15], zone), subOid, indexOids
+	case "TransportAddressIPv4":
+		// 6 bytes: 4 IP + 2 port (RFC 3419)
+		subOid, indexOids := splitOid(indexOids, 6)
+		ip := fmt.Sprintf("%d.%d.%d.%d", subOid[0], subOid[1], subOid[2], subOid[3])
+		port := uint16(subOid[4])<<8 | uint16(subOid[5])
+		return fmt.Sprintf("%s:%d", ip, port), subOid, indexOids
+	case "TransportAddressIPv6":
+		// 18 bytes: 16 IP + 2 port (RFC 3419)
+		subOid, indexOids := splitOid(indexOids, 18)
+		parts := make([]any, 16)
+		for i := 0; i < 16; i++ {
+			parts[i] = subOid[i]
+		}
+		port := uint16(subOid[16])<<8 | uint16(subOid[17])
+		return fmt.Sprintf("[%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X]:%d",
+			parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7],
+			parts[8], parts[9], parts[10], parts[11], parts[12], parts[13], parts[14], parts[15], port), subOid, indexOids
+	case "TransportAddressIPv4z":
+		// 10 bytes: 4 IP + 4 zone + 2 port (RFC 3419)
+		subOid, indexOids := splitOid(indexOids, 10)
+		ip := fmt.Sprintf("%d.%d.%d.%d", subOid[0], subOid[1], subOid[2], subOid[3])
+		zone := uint32(subOid[4])<<24 | uint32(subOid[5])<<16 | uint32(subOid[6])<<8 | uint32(subOid[7])
+		port := uint16(subOid[8])<<8 | uint16(subOid[9])
+		return fmt.Sprintf("%s%%%d:%d", ip, zone, port), subOid, indexOids
+	case "TransportAddressIPv6z":
+		// 22 bytes: 16 IP + 4 zone + 2 port (RFC 3419)
+		subOid, indexOids := splitOid(indexOids, 22)
+		parts := make([]any, 16)
+		for i := 0; i < 16; i++ {
+			parts[i] = subOid[i]
+		}
+		zone := uint32(subOid[16])<<24 | uint32(subOid[17])<<16 | uint32(subOid[18])<<8 | uint32(subOid[19])
+		port := uint16(subOid[20])<<8 | uint16(subOid[21])
+		return fmt.Sprintf("[%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X%%%d]:%d",
+			parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7],
+			parts[8], parts[9], parts[10], parts[11], parts[12], parts[13], parts[14], parts[15], zone, port), subOid, indexOids
 	case "EnumAsInfo":
 		subOid, indexOids := splitOid(indexOids, 1)
 		value, ok := enumValues[subOid[0]]
