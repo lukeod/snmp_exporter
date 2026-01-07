@@ -14,13 +14,19 @@
 package collector
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
 
-// writeUint writes a uint64 in the given base to a strings.Builder.
-// Uses strconv.AppendUint with a stack buffer to avoid allocation.
+const hextableUpper = "0123456789ABCDEF"
+
+func writeHexUpper(w *strings.Builder, src []byte) {
+	for _, v := range src {
+		w.WriteByte(hextableUpper[v>>4])
+		w.WriteByte(hextableUpper[v&0x0f])
+	}
+}
+
 func writeUint(w *strings.Builder, val uint64, base int) {
 	var buf [20]byte // uint64 max is 20 decimal digits
 	w.Write(strconv.AppendUint(buf[:0], val, base))
@@ -159,7 +165,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 				}
 				writeUint(&result, val, 10)
 			case 'x':
-				fmt.Fprintf(&result, "%X", chunk)
+				writeHexUpper(&result, chunk)
 			case 'o':
 				// Big-endian octal
 				var val uint64

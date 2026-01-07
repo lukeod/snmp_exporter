@@ -1,0 +1,659 @@
+# WARNING: This file was auto-generated using snmp_exporter generator, manual changes will be lost.
+auths:
+  public_v2:
+    community: public
+    security_level: noAuthNoPriv
+    auth_protocol: MD5
+    priv_protocol: DES
+    version: 2
+modules:
+  baseline:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.2.2.1.6
+    - 1.3.6.1.2.1.31.1.1.1.1
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+    get:
+    - 1.3.6.1.2.1.1.1.0
+    - 1.3.6.1.2.1.1.5.0
+    metrics:
+    - name: sysDescr
+      oid: 1.3.6.1.2.1.1.1
+      type: DisplayString
+      help: A textual description of the entity - 1.3.6.1.2.1.1.1
+    - name: sysName
+      oid: 1.3.6.1.2.1.1.5
+      type: DisplayString
+      help: An administratively-assigned name for this managed node - 1.3.6.1.2.1.1.5
+    - name: ifDescr
+      oid: 1.3.6.1.2.1.2.2.1.2
+      type: DisplayString
+      help: A textual string containing information about the interface - 1.3.6.1.2.1.2.2.1.2
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: PhysAddress48
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: ifName
+      oid: 1.3.6.1.2.1.31.1.1.1.1
+      type: DisplayString
+      help: The textual name of the interface - 1.3.6.1.2.1.31.1.1.1.1
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: tmnxHwCLEI
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      type: DisplayString
+      help: The Common Language Equipment Identifier, CLEI, code is a unique 10 character
+        identifier, that is fixed by the manufacturer - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwSwLastBoot
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      type: DateAndTime
+      help: The date and time the software running on this IOM or CPM card was last
+        rebooted - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwBaseMacAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      type: PhysAddress48
+      help: tmnxHwBaseMacAddress contains the base MAC address of the hardware component
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwMfgString
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      type: DisplayString
+      help: The tmnxHwMfgString contains unspecified Nokia SROS series manufacturing
+        information and includes the Nokia vendor information - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwSerialNumber
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      type: DisplayString
+      help: The unique Nokia SROS series serial number of the hardware component.
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: vRiaInetAddressType
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      type: gauge
+      help: vRiaInetAddressType specifies the type of the vRiaInetAddress address
+        assigned to a router's interface. - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+    - name: vRiaInetAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      type: OctetString
+      help: The type of this address is determined by the value of the vRiaInetAddressType
+        object - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+  hint_explicit:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.2.2.1.6
+    - 1.3.6.1.2.1.31.1.1.1.1
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+    get:
+    - 1.3.6.1.2.1.1.1.0
+    - 1.3.6.1.2.1.1.5.0
+    metrics:
+    - name: sysDescr
+      oid: 1.3.6.1.2.1.1.1
+      type: OctetString
+      help: A textual description of the entity - 1.3.6.1.2.1.1.1
+      display_hint: 255a
+    - name: sysName
+      oid: 1.3.6.1.2.1.1.5
+      type: OctetString
+      help: An administratively-assigned name for this managed node - 1.3.6.1.2.1.1.5
+      display_hint: 255a
+    - name: ifDescr
+      oid: 1.3.6.1.2.1.2.2.1.2
+      type: OctetString
+      help: A textual string containing information about the interface - 1.3.6.1.2.1.2.2.1.2
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 255a
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: '1x:'
+    - name: ifName
+      oid: 1.3.6.1.2.1.31.1.1.1.1
+      type: OctetString
+      help: The textual name of the interface - 1.3.6.1.2.1.31.1.1.1.1
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwCLEI
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      type: OctetString
+      help: The Common Language Equipment Identifier, CLEI, code is a unique 10 character
+        identifier, that is fixed by the manufacturer - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwSwLastBoot
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      type: OctetString
+      help: The date and time the software running on this IOM or CPM card was last
+        rebooted - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 2d-1d-1d,1d:1d:1d.1d
+    - name: tmnxHwBaseMacAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      type: OctetString
+      help: tmnxHwBaseMacAddress contains the base MAC address of the hardware component
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: '1x:'
+    - name: tmnxHwMfgString
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      type: OctetString
+      help: The tmnxHwMfgString contains unspecified Nokia SROS series manufacturing
+        information and includes the Nokia vendor information - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwSerialNumber
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      type: OctetString
+      help: The unique Nokia SROS series serial number of the hardware component.
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: vRiaInetAddressType
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      type: gauge
+      help: vRiaInetAddressType specifies the type of the vRiaInetAddress address
+        assigned to a router's interface. - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+    - name: vRiaInetAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      type: OctetString
+      help: The type of this address is determined by the value of the vRiaInetAddressType
+        object - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+      display_hint: 1d.1d.1d.1d
+  hint_mib:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.2.2.1.6
+    - 1.3.6.1.2.1.31.1.1.1.1
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+    get:
+    - 1.3.6.1.2.1.1.1.0
+    - 1.3.6.1.2.1.1.5.0
+    metrics:
+    - name: sysDescr
+      oid: 1.3.6.1.2.1.1.1
+      type: OctetString
+      help: A textual description of the entity - 1.3.6.1.2.1.1.1
+      display_hint: 255a
+    - name: sysName
+      oid: 1.3.6.1.2.1.1.5
+      type: OctetString
+      help: An administratively-assigned name for this managed node - 1.3.6.1.2.1.1.5
+      display_hint: 255a
+    - name: ifDescr
+      oid: 1.3.6.1.2.1.2.2.1.2
+      type: OctetString
+      help: A textual string containing information about the interface - 1.3.6.1.2.1.2.2.1.2
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 255a
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: '1x:'
+    - name: ifName
+      oid: 1.3.6.1.2.1.31.1.1.1.1
+      type: OctetString
+      help: The textual name of the interface - 1.3.6.1.2.1.31.1.1.1.1
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwCLEI
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      type: OctetString
+      help: The Common Language Equipment Identifier, CLEI, code is a unique 10 character
+        identifier, that is fixed by the manufacturer - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwSwLastBoot
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      type: DateAndTime
+      help: The date and time the software running on this IOM or CPM card was last
+        rebooted - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwBaseMacAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      type: OctetString
+      help: tmnxHwBaseMacAddress contains the base MAC address of the hardware component
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: '1x:'
+    - name: tmnxHwMfgString
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      type: OctetString
+      help: The tmnxHwMfgString contains unspecified Nokia SROS series manufacturing
+        information and includes the Nokia vendor information - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: tmnxHwSerialNumber
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      type: OctetString
+      help: The unique Nokia SROS series serial number of the hardware component.
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+      display_hint: 255a
+    - name: vRiaInetAddressType
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      type: gauge
+      help: vRiaInetAddressType specifies the type of the vRiaInetAddress address
+        assigned to a router's interface. - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+    - name: vRiaInetAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      type: OctetString
+      help: The type of this address is determined by the value of the vRiaInetAddressType
+        object - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+  lookup_baseline:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.31.1.1.1.6
+    metrics:
+    - name: ifHCInOctets
+      oid: 1.3.6.1.2.1.31.1.1.1.6
+      type: counter
+      help: The total number of octets received on the interface, including framing
+        characters - 1.3.6.1.2.1.31.1.1.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      lookups:
+      - labels:
+        - ifIndex
+        labelname: ifDescr
+        oid: 1.3.6.1.2.1.2.2.1.2
+        type: DisplayString
+  lookup_hint:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.31.1.1.1.6
+    metrics:
+    - name: ifHCInOctets
+      oid: 1.3.6.1.2.1.31.1.1.1.6
+      type: counter
+      help: The total number of octets received on the interface, including framing
+        characters - 1.3.6.1.2.1.31.1.1.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      lookups:
+      - labels:
+        - ifIndex
+        labelname: ifDescr
+        oid: 1.3.6.1.2.1.2.2.1.2
+        type: OctetString
+        display_hint: 255a
+  lookup_raw:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.31.1.1.1.6
+    metrics:
+    - name: ifHCInOctets
+      oid: 1.3.6.1.2.1.31.1.1.1.6
+      type: counter
+      help: The total number of octets received on the interface, including framing
+        characters - 1.3.6.1.2.1.31.1.1.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      lookups:
+      - labels:
+        - ifIndex
+        labelname: ifDescr
+        oid: 1.3.6.1.2.1.2.2.1.2
+        type: OctetString
+  raw_octetstring:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    - 1.3.6.1.2.1.2.2.1.6
+    - 1.3.6.1.2.1.31.1.1.1.1
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+    - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+    get:
+    - 1.3.6.1.2.1.1.1.0
+    - 1.3.6.1.2.1.1.5.0
+    metrics:
+    - name: sysDescr
+      oid: 1.3.6.1.2.1.1.1
+      type: OctetString
+      help: A textual description of the entity - 1.3.6.1.2.1.1.1
+    - name: sysName
+      oid: 1.3.6.1.2.1.1.5
+      type: OctetString
+      help: An administratively-assigned name for this managed node - 1.3.6.1.2.1.1.5
+    - name: ifDescr
+      oid: 1.3.6.1.2.1.2.2.1.2
+      type: OctetString
+      help: A textual string containing information about the interface - 1.3.6.1.2.1.2.2.1.2
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: ifName
+      oid: 1.3.6.1.2.1.31.1.1.1.1
+      type: OctetString
+      help: The textual name of the interface - 1.3.6.1.2.1.31.1.1.1.1
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+    - name: tmnxHwCLEI
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      type: OctetString
+      help: The Common Language Equipment Identifier, CLEI, code is a unique 10 character
+        identifier, that is fixed by the manufacturer - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.11
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwSwLastBoot
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      type: OctetString
+      help: The date and time the software running on this IOM or CPM card was last
+        rebooted - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.22
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwBaseMacAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      type: OctetString
+      help: tmnxHwBaseMacAddress contains the base MAC address of the hardware component
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.29
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwMfgString
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      type: OctetString
+      help: The tmnxHwMfgString contains unspecified Nokia SROS series manufacturing
+        information and includes the Nokia vendor information - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.3
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: tmnxHwSerialNumber
+      oid: 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      type: OctetString
+      help: The unique Nokia SROS series serial number of the hardware component.
+        - 1.3.6.1.4.1.6527.3.1.2.2.1.8.1.5
+      indexes:
+      - labelname: tmnxChassisIndex
+        type: gauge
+      - labelname: tmnxHwIndex
+        type: gauge
+    - name: vRiaInetAddressType
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      type: gauge
+      help: vRiaInetAddressType specifies the type of the vRiaInetAddress address
+        assigned to a router's interface. - 1.3.6.1.4.1.6527.3.1.2.3.6.1.8
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+    - name: vRiaInetAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      type: OctetString
+      help: The type of this address is determined by the value of the vRiaInetAddressType
+        object - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+  variations_2byte_hex:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.6
+    metrics:
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: '2x '
+  variations_hex_nosep:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.6
+    metrics:
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 1x
+  variations_ipv6:
+    walk:
+    - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+    metrics:
+    - name: vRiaInetAddress
+      oid: 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      type: OctetString
+      help: The type of this address is determined by the value of the vRiaInetAddressType
+        object - 1.3.6.1.4.1.6527.3.1.2.3.6.1.9
+      indexes:
+      - labelname: vRtrID
+        type: gauge
+      - labelname: vRtrIfIndex
+        type: gauge
+      - labelname: vRiaIndex
+        type: gauge
+      display_hint: 2x:2x:2x:2x:2x:2x:2x:2x
+  variations_mac:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.6
+    metrics:
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 1x-
+  variations_mac_decimal:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.6
+    metrics:
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 1d.
+  variations_octal:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.6
+    metrics:
+    - name: ifPhysAddress
+      oid: 1.3.6.1.2.1.2.2.1.6
+      type: OctetString
+      help: The interface's address at its protocol sub-layer - 1.3.6.1.2.1.2.2.1.6
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 1o.
+  variations_utf8:
+    walk:
+    - 1.3.6.1.2.1.2.2.1.2
+    get:
+    - 1.3.6.1.2.1.1.5.0
+    metrics:
+    - name: sysName
+      oid: 1.3.6.1.2.1.1.5
+      type: OctetString
+      help: An administratively-assigned name for this managed node - 1.3.6.1.2.1.1.5
+      display_hint: 255t
+    - name: ifDescr
+      oid: 1.3.6.1.2.1.2.2.1.2
+      type: OctetString
+      help: A textual string containing information about the interface - 1.3.6.1.2.1.2.2.1.2
+      indexes:
+      - labelname: ifIndex
+        type: gauge
+      display_hint: 255t

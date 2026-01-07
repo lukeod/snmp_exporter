@@ -1,0 +1,12 @@
+name: srlinux-snmp-test
+
+topology:
+  kinds:
+    nokia_srlinux:
+      image: ghcr.io/nokia/srlinux:25.3.2
+      startup-config: snmp-config.cli
+
+  nodes:
+    srl1:
+      kind: nokia_srlinux
+      type: ixrd2l

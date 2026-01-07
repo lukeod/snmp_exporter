@@ -1,0 +1,195 @@
+# display_hint A/B test scenarios for Nokia SR Linux
+#
+# All modules (except variations) scrape the SAME set of OIDs with different
+# rendering approaches for easy comparison.
+#
+# Usage:
+#   ../../generator/generator generate -m mibs
+#   ../../snmp_exporter --config.file=snmp.yml
+#   curl 'localhost:9116/snmp?module=<module>&target=172.20.20.2'
+#
+# Compare: baseline vs raw_octetstring vs hint_mib vs hint_explicit
+---
+auths:
+  public_v2:
+    version: 2
+
+modules:
+  #############################################################################
+  # 1. BASELINE - Default behavior using built-in type handlers
+  #############################################################################
+  baseline:
+    walk:
+      - sysDescr             # DisplayString "255a" -> "SRLinux-v25..."
+      - sysName              # DisplayString "255a" -> "srl1"
+      - ifDescr              # DisplayString "255a" -> "ethernet-1/1"
+      - ifName               # DisplayString "255a" -> "ethernet-1/1"
+      - ifPhysAddress        # PhysAddress "1x:" -> "1A:CE:00:FF:00:01"
+      - tmnxHwSwLastBoot     # DateAndTime "2d-1d-1d,1d:1d:1d.1d" -> "2026-1-7,6:31:45.0"
+      - vRiaInetAddressType  # INTEGER (context for vRiaInetAddress)
+      - vRiaInetAddress      # TmnxAddressAndPrefixAddress (no hint) -> hex
+      - tmnxHwBaseMacAddress # MacAddress "1x:" -> "1A:CE:00:FF:00:00"
+      - tmnxHwCLEI           # SnmpAdminString "255a" -> "Sim CLEI"
+      - tmnxHwMfgString      # SnmpAdminString "255a" -> "7220 IXR-D2L"
+      - tmnxHwSerialNumber   # SnmpAdminString "255a" -> "Sim Serial No."
+    overrides:
+      ifPhysAddress:        { type: PhysAddress48 }
+      tmnxHwSwLastBoot:     { type: DateAndTime }
+      tmnxHwBaseMacAddress: { type: PhysAddress48 }
+
+  #############################################################################
+  # 2. RAW_OCTETSTRING - Force OctetString, no hints (shows raw hex)
+  #############################################################################
+  raw_octetstring:
+    walk:
+      - sysDescr             # DisplayString -> 0x53524C696E75782D...
+      - sysName              # DisplayString -> 0x73726C31
+      - ifDescr              # DisplayString -> 0x657468...
+      - ifName               # DisplayString -> 0x657468...
+      - ifPhysAddress        # PhysAddress -> 0x1ACE00FF0001
+      - tmnxHwSwLastBoot     # DateAndTime -> 0x07EA0107061F2D00
+      - vRiaInetAddressType  # INTEGER
+      - vRiaInetAddress      # TmnxAddressAndPrefixAddress -> 0xAC141402
+      - tmnxHwBaseMacAddress # MacAddress -> 0x1ACE00FF0000
+      - tmnxHwCLEI           # SnmpAdminString -> 0x53696D20434C4549
+      - tmnxHwMfgString      # SnmpAdminString -> 0x37323230...
+      - tmnxHwSerialNumber   # SnmpAdminString -> 0x53696D20536572...
+    overrides:
+      sysDescr:             { type: OctetString }
+      sysName:              { type: OctetString }
+      ifDescr:              { type: OctetString }
+      ifName:               { type: OctetString }
+      ifPhysAddress:        { type: OctetString }
+      tmnxHwSwLastBoot:     { type: OctetString }
+      vRiaInetAddress:      { type: OctetString }
+      tmnxHwBaseMacAddress: { type: OctetString }
+      tmnxHwCLEI:           { type: OctetString }
+      tmnxHwMfgString:      { type: OctetString }
+      tmnxHwSerialNumber:   { type: OctetString }
+
+  #############################################################################
+  # 3. HINT_MIB - OctetString with @mib hint resolution
+  #############################################################################
+  hint_mib:
+    walk:
+      - sysDescr             # DisplayString @mib->"255a" -> "SRLinux-v25..."
+      - sysName              # DisplayString @mib->"255a" -> "srl1"
+      - ifDescr              # DisplayString @mib->"255a" -> "ethernet-1/1"
+      - ifName               # DisplayString @mib->"255a" -> "ethernet-1/1"
+      - ifPhysAddress        # PhysAddress @mib->"1x:" -> "1A:CE:00:FF:00:01"
+      - tmnxHwSwLastBoot     # DateAndTime - use built-in handler (semantic type)
+      - vRiaInetAddressType  # INTEGER
+      - vRiaInetAddress      # TmnxAddressAndPrefixAddress @mib->(none) -> hex
+      - tmnxHwBaseMacAddress # MacAddress @mib->"1x:" -> "1A:CE:00:FF:00:00"
+      - tmnxHwCLEI           # SnmpAdminString @mib->"255a" -> "Sim CLEI"
+      - tmnxHwMfgString      # SnmpAdminString @mib->"255a" -> "7220 IXR-D2L"
+      - tmnxHwSerialNumber   # SnmpAdminString @mib->"255a" -> "Sim Serial No."
+    overrides:
+      sysDescr:             { type: OctetString, display_hint: "@mib" }
+      sysName:              { type: OctetString, display_hint: "@mib" }
+      ifDescr:              { type: OctetString, display_hint: "@mib" }
+      ifName:               { type: OctetString, display_hint: "@mib" }
+      ifPhysAddress:        { type: OctetString, display_hint: "@mib" }
+      tmnxHwSwLastBoot:     { type: DateAndTime }  # Semantic type - not replaceable by display_hint
+      vRiaInetAddress:      { type: OctetString, display_hint: "@mib" }
+      tmnxHwBaseMacAddress: { type: OctetString, display_hint: "@mib" }
+      tmnxHwCLEI:           { type: OctetString, display_hint: "@mib" }
+      tmnxHwMfgString:      { type: OctetString, display_hint: "@mib" }
+      tmnxHwSerialNumber:   { type: OctetString, display_hint: "@mib" }
+
+  #############################################################################
+  # 4. HINT_EXPLICIT - OctetString with hardcoded hint strings
+  #############################################################################
+  hint_explicit:
+    walk:
+      - sysDescr             # DisplayString "255a" -> "SRLinux-v25..."
+      - sysName              # DisplayString "255a" -> "srl1"
+      - ifDescr              # DisplayString "255a" -> "ethernet-1/1"
+      - ifName               # DisplayString "255a" -> "ethernet-1/1"
+      - ifPhysAddress        # PhysAddress "1x:" -> "1A:CE:00:FF:00:01"
+      - tmnxHwSwLastBoot     # DateAndTime "2d-1d-1d,1d:1d:1d.1d" -> "2026-1-7,..."
+      - vRiaInetAddressType  # INTEGER
+      - vRiaInetAddress      # TmnxAddressAndPrefixAddress "1d.1d.1d.1d" -> "172.20.20.2"
+      - tmnxHwBaseMacAddress # MacAddress "1x:" -> "1A:CE:00:FF:00:00"
+      - tmnxHwCLEI           # SnmpAdminString "255a" -> "Sim CLEI"
+      - tmnxHwMfgString      # SnmpAdminString "255a" -> "7220 IXR-D2L"
+      - tmnxHwSerialNumber   # SnmpAdminString "255a" -> "Sim Serial No."
+    overrides:
+      sysDescr:             { type: OctetString, display_hint: "255a" }
+      sysName:              { type: OctetString, display_hint: "255a" }
+      ifDescr:              { type: OctetString, display_hint: "255a" }
+      ifName:               { type: OctetString, display_hint: "255a" }
+      ifPhysAddress:        { type: OctetString, display_hint: "1x:" }
+      tmnxHwSwLastBoot:     { type: OctetString, display_hint: "2d-1d-1d,1d:1d:1d.1d" }
+      vRiaInetAddress:      { type: OctetString, display_hint: "1d.1d.1d.1d" }  # IPv4 only
+      tmnxHwBaseMacAddress: { type: OctetString, display_hint: "1x:" }
+      tmnxHwCLEI:           { type: OctetString, display_hint: "255a" }
+      tmnxHwMfgString:      { type: OctetString, display_hint: "255a" }
+      tmnxHwSerialNumber:   { type: OctetString, display_hint: "255a" }
+
+  #############################################################################
+  # 5. VARIATIONS - Hint format edge cases
+  #############################################################################
+
+  variations_mac:           # PhysAddress with dash separator
+    walk: [ifPhysAddress]
+    overrides:
+      ifPhysAddress: { type: OctetString, display_hint: "1x-" }  # -> "1A-CE-00-FF-00-01"
+
+  variations_mac_decimal:   # PhysAddress as decimal
+    walk: [ifPhysAddress]
+    overrides:
+      ifPhysAddress: { type: OctetString, display_hint: "1d." }  # -> "26.206.0.255.0.1"
+
+  variations_hex_nosep:     # PhysAddress without separator
+    walk: [ifPhysAddress]
+    overrides:
+      ifPhysAddress: { type: OctetString, display_hint: "1x" }   # -> "1ACE00FF0001"
+
+  variations_ipv6:          # Full IPv6 format
+    walk: [vRiaInetAddress]
+    overrides:
+      vRiaInetAddress: { type: OctetString, display_hint: "2x:2x:2x:2x:2x:2x:2x:2x" }
+
+  variations_2byte_hex:     # 2-byte groups with space
+    walk: [ifPhysAddress]
+    overrides:
+      ifPhysAddress: { type: OctetString, display_hint: "2x " }  # -> "1ACE 00FF 0001"
+
+  variations_octal:         # Octal format (RFC-valid)
+    walk: [ifPhysAddress]
+    overrides:
+      ifPhysAddress: { type: OctetString, display_hint: "1o." }  # -> "32.316.0.377.0.1"
+
+  variations_utf8:          # UTF-8 specifier (t vs a)
+    walk: [sysName, ifDescr]
+    overrides:
+      sysName:  { type: OctetString, display_hint: "255t" }
+      ifDescr:  { type: OctetString, display_hint: "255t" }
+
+  #############################################################################
+  # 6. LOOKUP TESTS - display_hint on lookup labels
+  #############################################################################
+
+  lookup_baseline:          # Default lookup behavior
+    walk: [ifHCInOctets]
+    lookups:
+      - source_indexes: [ifIndex]
+        lookup: ifDescr     # DisplayString -> "ethernet-1/1"
+
+  lookup_raw:               # Lookup with OctetString (no hint)
+    walk: [ifHCInOctets]
+    lookups:
+      - source_indexes: [ifIndex]
+        lookup: ifDescr     # -> 0x657468...
+    overrides:
+      ifDescr: { type: OctetString }
+
+  lookup_hint:              # Lookup with @mib hint
+    walk: [ifHCInOctets]
+    lookups:
+      - source_indexes: [ifIndex]
+        lookup: ifDescr
+        display_hint: "@mib"  # DisplayString "255a" -> "ethernet-1/1"
+    overrides:
+      ifDescr: { type: OctetString }
