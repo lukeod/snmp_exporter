@@ -46,6 +46,17 @@ command like so,
   -o /tmp/snmp.yml
 ```
 
+You can use `-` as the path to read from stdin or write to stdout:
+```bash
+# Read generator config from stdin, write to stdout
+cat generator.yml | ./generator generate -g=- -o=- 2>/dev/null
+
+# Read from stdin, write to file
+cat generator.yml | ./generator generate -g=- -o /tmp/snmp.yml
+```
+
+Note: Use the `=` syntax (`-g=-` or `--generator-path=-`), as `-g -` with a space is not supported.
+
 ### MIB Parsing options
 
 The parsing of MIBs can be controlled using the `--snmp.mibopts` flag. The available values depend on the net-snmp version used to build the generator.

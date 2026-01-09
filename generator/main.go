@@ -15,6 +15,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -33,14 +34,19 @@ var cannotFindModuleRE = regexp.MustCompile(`Cannot find module \((.+)\): (.+)`)
 
 // Generate a snmp_exporter config and write it out.
 func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logger) error {
-	outputPath, err := filepath.Abs(*outputPath)
-	if err != nil {
-		return fmt.Errorf("unable to determine absolute path for output")
-	}
+	var content []byte
+	var err error
 
-	content, err := os.ReadFile(*generatorYmlPath)
-	if err != nil {
-		return fmt.Errorf("error reading yml config: %w", err)
+	if *generatorYmlPath == "-" {
+		content, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("error reading from stdin: %w", err)
+		}
+	} else {
+		content, err = os.ReadFile(*generatorYmlPath)
+		if err != nil {
+			return fmt.Errorf("error reading yml config: %w", err)
+		}
 	}
 	cfg := &Config{}
 	err = yaml.UnmarshalStrict(content, cfg)
@@ -86,16 +92,28 @@ func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logge
 		return fmt.Errorf("error parsing generated config: %w", err)
 	}
 
-	f, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("error opening output file: %w", err)
-	}
 	out = append([]byte("# WARNING: This file was auto-generated using snmp_exporter generator, manual changes will be lost.\n"), out...)
-	_, err = f.Write(out)
-	if err != nil {
-		return fmt.Errorf("error writing to output file: %w", err)
+
+	if *outputPath == "-" {
+		_, err = os.Stdout.Write(out)
+		if err != nil {
+			return fmt.Errorf("error writing to stdout: %w", err)
+		}
+	} else {
+		outFile, err := filepath.Abs(*outputPath)
+		if err != nil {
+			return fmt.Errorf("unable to determine absolute path for output")
+		}
+		f, err := os.Create(outFile)
+		if err != nil {
+			return fmt.Errorf("error opening output file: %w", err)
+		}
+		_, err = f.Write(out)
+		if err != nil {
+			return fmt.Errorf("error writing to output file: %w", err)
+		}
+		logger.Info("Config written", "file", outFile)
 	}
-	logger.Info("Config written", "file", outputPath)
 	return nil
 }
 
@@ -104,8 +122,8 @@ var (
 	snmpMIBOpts        = kingpin.Flag("snmp.mibopts", "Toggle various defaults controlling MIB parsing, see snmpwalk --help").Default("eu").String()
 	generateCommand    = kingpin.Command("generate", "Generate snmp.yml from generator.yml")
 	userMibsDir        = kingpin.Flag("mibs-dir", "Paths to mibs directory").Default("").Short('m').Strings()
-	generatorYmlPath   = generateCommand.Flag("generator-path", "Path to the input generator.yml file").Default("generator.yml").Short('g').String()
-	outputPath         = generateCommand.Flag("output-path", "Path to write the snmp_exporter's config file").Default("snmp.yml").Short('o').String()
+	generatorYmlPath   = generateCommand.Flag("generator-path", "Path to the input generator.yml file, or '-' for stdin").Default("generator.yml").Short('g').String()
+	outputPath         = generateCommand.Flag("output-path", "Path to write the snmp_exporter's config file, or '-' for stdout").Default("snmp.yml").Short('o').String()
 	parseErrorsCommand = kingpin.Command("parse_errors", "Debug: Print the parse errors output by NetSNMP")
 	dumpCommand        = kingpin.Command("dump", "Debug: Dump the parsed and prepared MIBs")
 )
