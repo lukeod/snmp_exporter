@@ -21,31 +21,6 @@ import (
 // hexDigits is a lookup table for uppercase hex digits.
 const hexDigits = "0123456789ABCDEF"
 
-// smallBufferSize is the threshold for using stack-allocated buffers.
-// Covers common cases: IPv4 (15), MAC (17), IPv6 (39), UUID (36).
-const smallBufferSize = 64
-
-// estimateOutputSize returns a reasonable upper bound for the formatted output size.
-// It scans for format characters to choose an appropriate multiplier, avoiding the
-// 4x over-allocation that would occur for ASCII/UTF-8 text formats.
-func estimateOutputSize(hint string, dataLen int) int {
-	// Scan backwards for the last format character (most likely to repeat)
-	for i := len(hint) - 1; i >= 0; i-- {
-		switch hint[i] {
-		case 'a', 't':
-			// Text formats: 1 byte → 1 char, plus small separator allowance
-			return dataLen + dataLen/8 + 1
-		case 'x':
-			// Hex: 1 byte → 2 chars, plus separator allowance
-			return dataLen*3 + 1
-		case 'd', 'o':
-			// Decimal/octal: worst case ~3 chars per byte plus separators
-			return dataLen*4 + 1
-		}
-	}
-	return dataLen*4 + 1
-}
-
 // applyDisplayHint parses an RFC 2579 DISPLAY-HINT string and applies it to
 // raw bytes in a single pass.
 //
@@ -71,17 +46,8 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 		return "", false
 	}
 
-	estimatedSize := estimateOutputSize(hint, len(data))
-
-	// Use stack-allocated buffer for small outputs (common case: IPs, MACs, UUIDs).
-	// For larger outputs, use strings.Builder which can return its internal buffer
-	// without copying via unsafe (avoiding double allocation).
-	if estimatedSize > smallBufferSize {
-		return applyDisplayHintLarge(hint, data, estimatedSize)
-	}
-
-	var stackBuf [smallBufferSize]byte
-	result := stackBuf[:0]
+	var result strings.Builder
+	result.Grow(len(data) * 3) // Reasonable estimate for most formats
 
 	hintPos := 0
 	dataPos := 0
@@ -112,31 +78,27 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 		}
 
 		// (2) Octet length - one or more decimal digits (required)
-		if hintPos >= len(hint) || !isDigit(hint[hintPos]) {
-			// Parse error: expected digits
+		if hintPos >= len(hint) || hint[hintPos] < '0' || hint[hintPos] > '9' {
 			return "", false
 		}
 
 		take := 0
-		for hintPos < len(hint) && isDigit(hint[hintPos]) {
+		for hintPos < len(hint) && hint[hintPos] >= '0' && hint[hintPos] <= '9' {
 			take = take*10 + int(hint[hintPos]-'0')
 			hintPos++
 		}
 
 		if take < 0 {
-			// Overflow wrapped to negative
 			return "", false
 		}
 
 		// (3) Format character (required)
 		if hintPos >= len(hint) {
-			// Parse error: expected format character
 			return "", false
 		}
 
 		fmtChar := hint[hintPos]
 		if fmtChar != 'd' && fmtChar != 'x' && fmtChar != 'o' && fmtChar != 'a' && fmtChar != 't' {
-			// Invalid format character
 			return "", false
 		}
 		hintPos++
@@ -144,7 +106,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 		// (4) Optional separator
 		var sep byte
 		hasSep := false
-		if hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
+		if hintPos < len(hint) && (hint[hintPos] < '0' || hint[hintPos] > '9') && hint[hintPos] != '*' {
 			sep = hint[hintPos]
 			hasSep = true
 			hintPos++
@@ -153,7 +115,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 		// (5) Optional terminator (only valid with starPrefix)
 		var term byte
 		hasTerm := false
-		if starPrefix && hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
+		if starPrefix && hintPos < len(hint) && (hint[hintPos] < '0' || hint[hintPos] > '9') && hint[hintPos] != '*' {
 			term = hint[hintPos]
 			hasTerm = true
 			hintPos++
@@ -161,142 +123,9 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 
 		// Remember this spec for implicit repetition
 		lastSpecStart = specStart
-		// A spec consumes data if take > 0, or if starPrefix (consumes repeat count byte)
 		lastSpecConsumesByte = (take > 0) || starPrefix
 
 		// Apply the spec to data
-		repeatCount := 1
-		if starPrefix && dataPos < len(data) {
-			repeatCount = int(data[dataPos])
-			dataPos++
-		}
-
-		for r := 0; r < repeatCount && dataPos < len(data); r++ {
-			end := dataPos + take
-			if end > len(data) || end < dataPos { // catch overflow
-				end = len(data)
-			}
-			chunk := data[dataPos:end]
-
-			// Format the chunk
-			switch fmtChar {
-			case 'd':
-				// Big-endian unsigned integer
-				var val uint64
-				for _, b := range chunk {
-					val = (val << 8) | uint64(b)
-				}
-				result = strconv.AppendUint(result, val, 10)
-			case 'x':
-				// Hex: 2 chars per byte using lookup table
-				for _, b := range chunk {
-					result = append(result, hexDigits[b>>4], hexDigits[b&0x0F])
-				}
-			case 'o':
-				// Big-endian octal
-				var val uint64
-				for _, b := range chunk {
-					val = (val << 8) | uint64(b)
-				}
-				result = strconv.AppendUint(result, val, 8)
-			case 'a', 't':
-				// ASCII/UTF-8 - append bytes directly
-				result = append(result, chunk...)
-			}
-			dataPos = end
-
-			// Emit separator (suppressed if at end of data or before terminator)
-			moreData := dataPos < len(data)
-			if hasSep && moreData && (!hasTerm || r != repeatCount-1) {
-				result = append(result, sep)
-			}
-		}
-
-		// Emit terminator after repeat group
-		if hasTerm && dataPos < len(data) {
-			result = append(result, term)
-		}
-	}
-
-	return string(result), true
-}
-
-func isDigit(c byte) bool {
-	return c >= '0' && c <= '9'
-}
-
-// applyDisplayHintLarge handles large outputs using strings.Builder.
-// strings.Builder.String() can return its internal buffer without copying
-// (via unsafe), making it more efficient for larger outputs than []byte.
-func applyDisplayHintLarge(hint string, data []byte, estimatedSize int) (string, bool) {
-	var result strings.Builder
-	result.Grow(estimatedSize)
-
-	hintPos := 0
-	dataPos := 0
-	lastSpecStart := 0
-	lastSpecConsumesByte := false
-
-	for dataPos < len(data) {
-		specStart := hintPos
-
-		if hintPos >= len(hint) {
-			if !lastSpecConsumesByte {
-				return "", false
-			}
-			hintPos = lastSpecStart
-			specStart = lastSpecStart
-		}
-
-		starPrefix := false
-		if hintPos < len(hint) && hint[hintPos] == '*' {
-			starPrefix = true
-			hintPos++
-		}
-
-		if hintPos >= len(hint) || !isDigit(hint[hintPos]) {
-			return "", false
-		}
-
-		take := 0
-		for hintPos < len(hint) && isDigit(hint[hintPos]) {
-			take = take*10 + int(hint[hintPos]-'0')
-			hintPos++
-		}
-
-		if take < 0 {
-			return "", false
-		}
-
-		if hintPos >= len(hint) {
-			return "", false
-		}
-
-		fmtChar := hint[hintPos]
-		if fmtChar != 'd' && fmtChar != 'x' && fmtChar != 'o' && fmtChar != 'a' && fmtChar != 't' {
-			return "", false
-		}
-		hintPos++
-
-		var sep byte
-		hasSep := false
-		if hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
-			sep = hint[hintPos]
-			hasSep = true
-			hintPos++
-		}
-
-		var term byte
-		hasTerm := false
-		if starPrefix && hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
-			term = hint[hintPos]
-			hasTerm = true
-			hintPos++
-		}
-
-		lastSpecStart = specStart
-		lastSpecConsumesByte = (take > 0) || starPrefix
-
 		repeatCount := 1
 		if starPrefix && dataPos < len(data) {
 			repeatCount = int(data[dataPos])
@@ -316,7 +145,6 @@ func applyDisplayHintLarge(hint string, data []byte, estimatedSize int) (string,
 				for _, b := range chunk {
 					val = (val << 8) | uint64(b)
 				}
-				// Use stack buffer with strconv.AppendUint
 				var buf [20]byte
 				result.Write(strconv.AppendUint(buf[:0], val, 10))
 			case 'x':
@@ -336,12 +164,13 @@ func applyDisplayHintLarge(hint string, data []byte, estimatedSize int) (string,
 			}
 			dataPos = end
 
-			moreData := dataPos < len(data)
-			if hasSep && moreData && (!hasTerm || r != repeatCount-1) {
+			// Emit separator (suppressed if at end of data or before terminator)
+			if hasSep && dataPos < len(data) && (!hasTerm || r != repeatCount-1) {
 				result.WriteByte(sep)
 			}
 		}
 
+		// Emit terminator after repeat group
 		if hasTerm && dataPos < len(data) {
 			result.WriteByte(term)
 		}

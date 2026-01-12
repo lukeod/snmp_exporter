@@ -392,35 +392,6 @@ func TestApplyDisplayHintZeroWidthInvalid(t *testing.T) {
 	}
 }
 
-func TestEstimateOutputSize(t *testing.T) {
-	cases := []struct {
-		name     string
-		hint     string
-		dataLen  int
-		expected int
-		actual   int // actual output length for comparison
-	}{
-		{"IPv4", "1d.1d.1d.1d", 4, 17, 15},       // 4*4+1=17, actual "192.168.100.200"=15
-		{"MAC", "1x:", 6, 19, 17},                 // 6*3+1=19, actual "00:1A:2B:3C:4D:5E"=17
-		{"ASCII_small", "255a", 10, 12, 10},       // 10+10/8+1=12, actual=10
-		{"ASCII_large", "255a", 200, 226, 200},    // 200+25+1=226, actual=200
-		{"Hex_large", "1x:", 100, 301, 299},       // 100*3+1=301, actual=100*2+99=299
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			est := estimateOutputSize(c.hint, c.dataLen)
-			if est != c.expected {
-				t.Errorf("estimateOutputSize(%q, %d) = %d, want %d", c.hint, c.dataLen, est, c.expected)
-			}
-			if est < c.actual {
-				t.Errorf("estimateOutputSize(%q, %d) = %d, but actual output is %d (under-estimate!)",
-					c.hint, c.dataLen, est, c.actual)
-			}
-		})
-	}
-}
-
 func BenchmarkApplyDisplayHint(b *testing.B) {
 	benchmarks := []struct {
 		name string
@@ -451,16 +422,6 @@ func BenchmarkApplyDisplayHint(b *testing.B) {
 			name: "ASCII",
 			hint: "255a",
 			data: []byte("Hello, World! This is a longer string for benchmarking."),
-		},
-		{
-			name: "ASCII_Large",
-			hint: "255a",
-			data: []byte("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris."),
-		},
-		{
-			name: "MAC_Long",
-			hint: "1x:",
-			data: []byte{0x00, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e, 0x6f, 0x70, 0x81, 0x92, 0xa3, 0xb4, 0xc5, 0xd6, 0xe7, 0xf8},
 		},
 	}
 
