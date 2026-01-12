@@ -38,6 +38,27 @@ func writeHexBytes(w *strings.Builder, data []byte) {
 	}
 }
 
+// estimateOutputSize returns a reasonable upper bound for the formatted output size.
+// It scans for format characters to choose an appropriate multiplier, avoiding the
+// 4x over-allocation that would occur for ASCII/UTF-8 text formats.
+func estimateOutputSize(hint string, dataLen int) int {
+	// Scan backwards for the last format character (most likely to repeat)
+	for i := len(hint) - 1; i >= 0; i-- {
+		switch hint[i] {
+		case 'a', 't':
+			// Text formats: 1 byte → 1 char, plus small separator allowance
+			return dataLen + dataLen/8 + 1
+		case 'x':
+			// Hex: 1 byte → 2 chars, plus separator allowance
+			return dataLen*3 + 1
+		case 'd', 'o':
+			// Decimal/octal: worst case ~3 chars per byte plus separators
+			return dataLen*4 + 1
+		}
+	}
+	return dataLen*4 + 1
+}
+
 // applyDisplayHint parses an RFC 2579 DISPLAY-HINT string and applies it to
 // raw bytes in a single pass.
 //
@@ -64,7 +85,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 	}
 
 	var result strings.Builder
-	result.Grow(len(data) * 4) // Preallocate for typical output
+	result.Grow(estimateOutputSize(hint, len(data)))
 
 	hintPos := 0
 	dataPos := 0
