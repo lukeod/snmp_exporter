@@ -391,3 +391,46 @@ func TestApplyDisplayHintZeroWidthInvalid(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkApplyDisplayHint(b *testing.B) {
+	benchmarks := []struct {
+		name string
+		hint string
+		data []byte
+	}{
+		{
+			name: "IPv4",
+			hint: "1d.1d.1d.1d",
+			data: []byte{192, 168, 1, 1},
+		},
+		{
+			name: "MAC",
+			hint: "1x:",
+			data: []byte{0x00, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e},
+		},
+		{
+			name: "IPv6",
+			hint: "2x:2x:2x:2x:2x:2x:2x:2x",
+			data: []byte{0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
+		},
+		{
+			name: "UUID",
+			hint: "4x-2x-2x-1x1x-6x",
+			data: []byte{0x12, 0x34, 0x56, 0x78, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+		},
+		{
+			name: "ASCII",
+			hint: "255a",
+			data: []byte("Hello, World! This is a longer string for benchmarking."),
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				applyDisplayHint(bm.hint, bm.data)
+			}
+		})
+	}
+}

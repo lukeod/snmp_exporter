@@ -14,7 +14,6 @@
 package collector
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -24,6 +23,19 @@ import (
 func writeUint(w *strings.Builder, val uint64, base int) {
 	var buf [20]byte // uint64 max is 20 decimal digits
 	w.Write(strconv.AppendUint(buf[:0], val, base))
+}
+
+// hexDigits is a lookup table for uppercase hex digits.
+const hexDigits = "0123456789ABCDEF"
+
+// writeHexBytes writes bytes as zero-padded uppercase hex to a strings.Builder.
+// Each byte produces exactly 2 hex characters. Uses direct byte lookup to avoid
+// fmt.Fprintf overhead.
+func writeHexBytes(w *strings.Builder, data []byte) {
+	for _, b := range data {
+		w.WriteByte(hexDigits[b>>4])
+		w.WriteByte(hexDigits[b&0x0F])
+	}
 }
 
 // applyDisplayHint parses an RFC 2579 DISPLAY-HINT string and applies it to
@@ -159,7 +171,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 				}
 				writeUint(&result, val, 10)
 			case 'x':
-				fmt.Fprintf(&result, "%X", chunk)
+				writeHexBytes(&result, chunk)
 			case 'o':
 				// Big-endian octal
 				var val uint64
