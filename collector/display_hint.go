@@ -18,25 +18,12 @@ import (
 	"strings"
 )
 
-// writeUint writes a uint64 in the given base to a strings.Builder.
-// Uses strconv.AppendUint with a stack buffer to avoid allocation.
-func writeUint(w *strings.Builder, val uint64, base int) {
-	var buf [20]byte // uint64 max is 20 decimal digits
-	w.Write(strconv.AppendUint(buf[:0], val, base))
-}
-
 // hexDigits is a lookup table for uppercase hex digits.
 const hexDigits = "0123456789ABCDEF"
 
-// writeHexBytes writes bytes as zero-padded uppercase hex to a strings.Builder.
-// Each byte produces exactly 2 hex characters. Uses direct byte lookup to avoid
-// fmt.Fprintf overhead.
-func writeHexBytes(w *strings.Builder, data []byte) {
-	for _, b := range data {
-		w.WriteByte(hexDigits[b>>4])
-		w.WriteByte(hexDigits[b&0x0F])
-	}
-}
+// smallBufferSize is the threshold for using stack-allocated buffers.
+// Covers common cases: IPv4 (15), MAC (17), IPv6 (39), UUID (36).
+const smallBufferSize = 64
 
 // estimateOutputSize returns a reasonable upper bound for the formatted output size.
 // It scans for format characters to choose an appropriate multiplier, avoiding the
@@ -84,8 +71,17 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 		return "", false
 	}
 
-	var result strings.Builder
-	result.Grow(estimateOutputSize(hint, len(data)))
+	estimatedSize := estimateOutputSize(hint, len(data))
+
+	// Use stack-allocated buffer for small outputs (common case: IPs, MACs, UUIDs).
+	// For larger outputs, use strings.Builder which can return its internal buffer
+	// without copying via unsafe (avoiding double allocation).
+	if estimatedSize > smallBufferSize {
+		return applyDisplayHintLarge(hint, data, estimatedSize)
+	}
+
+	var stackBuf [smallBufferSize]byte
+	result := stackBuf[:0]
 
 	hintPos := 0
 	dataPos := 0
@@ -182,7 +178,7 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 			}
 			chunk := data[dataPos:end]
 
-			// Format the chunk using stack-allocated buffers
+			// Format the chunk
 			switch fmtChar {
 			case 'd':
 				// Big-endian unsigned integer
@@ -190,38 +186,166 @@ func applyDisplayHint(hint string, data []byte) (string, bool) {
 				for _, b := range chunk {
 					val = (val << 8) | uint64(b)
 				}
-				writeUint(&result, val, 10)
+				result = strconv.AppendUint(result, val, 10)
 			case 'x':
-				writeHexBytes(&result, chunk)
+				// Hex: 2 chars per byte using lookup table
+				for _, b := range chunk {
+					result = append(result, hexDigits[b>>4], hexDigits[b&0x0F])
+				}
 			case 'o':
 				// Big-endian octal
 				var val uint64
 				for _, b := range chunk {
 					val = (val << 8) | uint64(b)
 				}
-				writeUint(&result, val, 8)
+				result = strconv.AppendUint(result, val, 8)
 			case 'a', 't':
-				// ASCII/UTF-8 - write bytes directly
-				result.Write(chunk)
+				// ASCII/UTF-8 - append bytes directly
+				result = append(result, chunk...)
 			}
 			dataPos = end
 
 			// Emit separator (suppressed if at end of data or before terminator)
 			moreData := dataPos < len(data)
 			if hasSep && moreData && (!hasTerm || r != repeatCount-1) {
-				result.WriteByte(sep)
+				result = append(result, sep)
 			}
 		}
 
 		// Emit terminator after repeat group
+		if hasTerm && dataPos < len(data) {
+			result = append(result, term)
+		}
+	}
+
+	return string(result), true
+}
+
+func isDigit(c byte) bool {
+	return c >= '0' && c <= '9'
+}
+
+// applyDisplayHintLarge handles large outputs using strings.Builder.
+// strings.Builder.String() can return its internal buffer without copying
+// (via unsafe), making it more efficient for larger outputs than []byte.
+func applyDisplayHintLarge(hint string, data []byte, estimatedSize int) (string, bool) {
+	var result strings.Builder
+	result.Grow(estimatedSize)
+
+	hintPos := 0
+	dataPos := 0
+	lastSpecStart := 0
+	lastSpecConsumesByte := false
+
+	for dataPos < len(data) {
+		specStart := hintPos
+
+		if hintPos >= len(hint) {
+			if !lastSpecConsumesByte {
+				return "", false
+			}
+			hintPos = lastSpecStart
+			specStart = lastSpecStart
+		}
+
+		starPrefix := false
+		if hintPos < len(hint) && hint[hintPos] == '*' {
+			starPrefix = true
+			hintPos++
+		}
+
+		if hintPos >= len(hint) || !isDigit(hint[hintPos]) {
+			return "", false
+		}
+
+		take := 0
+		for hintPos < len(hint) && isDigit(hint[hintPos]) {
+			take = take*10 + int(hint[hintPos]-'0')
+			hintPos++
+		}
+
+		if take < 0 {
+			return "", false
+		}
+
+		if hintPos >= len(hint) {
+			return "", false
+		}
+
+		fmtChar := hint[hintPos]
+		if fmtChar != 'd' && fmtChar != 'x' && fmtChar != 'o' && fmtChar != 'a' && fmtChar != 't' {
+			return "", false
+		}
+		hintPos++
+
+		var sep byte
+		hasSep := false
+		if hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
+			sep = hint[hintPos]
+			hasSep = true
+			hintPos++
+		}
+
+		var term byte
+		hasTerm := false
+		if starPrefix && hintPos < len(hint) && !isDigit(hint[hintPos]) && hint[hintPos] != '*' {
+			term = hint[hintPos]
+			hasTerm = true
+			hintPos++
+		}
+
+		lastSpecStart = specStart
+		lastSpecConsumesByte = (take > 0) || starPrefix
+
+		repeatCount := 1
+		if starPrefix && dataPos < len(data) {
+			repeatCount = int(data[dataPos])
+			dataPos++
+		}
+
+		for r := 0; r < repeatCount && dataPos < len(data); r++ {
+			end := dataPos + take
+			if end > len(data) || end < dataPos {
+				end = len(data)
+			}
+			chunk := data[dataPos:end]
+
+			switch fmtChar {
+			case 'd':
+				var val uint64
+				for _, b := range chunk {
+					val = (val << 8) | uint64(b)
+				}
+				// Use stack buffer with strconv.AppendUint
+				var buf [20]byte
+				result.Write(strconv.AppendUint(buf[:0], val, 10))
+			case 'x':
+				for _, b := range chunk {
+					result.WriteByte(hexDigits[b>>4])
+					result.WriteByte(hexDigits[b&0x0F])
+				}
+			case 'o':
+				var val uint64
+				for _, b := range chunk {
+					val = (val << 8) | uint64(b)
+				}
+				var buf [22]byte
+				result.Write(strconv.AppendUint(buf[:0], val, 8))
+			case 'a', 't':
+				result.Write(chunk)
+			}
+			dataPos = end
+
+			moreData := dataPos < len(data)
+			if hasSep && moreData && (!hasTerm || r != repeatCount-1) {
+				result.WriteByte(sep)
+			}
+		}
+
 		if hasTerm && dataPos < len(data) {
 			result.WriteByte(term)
 		}
 	}
 
 	return result.String(), true
-}
-
-func isDigit(c byte) bool {
-	return c >= '0' && c <= '9'
 }
