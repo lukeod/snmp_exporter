@@ -117,9 +117,9 @@ func main() {
 	command := kingpin.Parse()
 	logger := promslog.New(promslogConfig)
 
-	output, err := initSNMP(logger)
+	output, err := initMIB(logger)
 	if err != nil {
-		logger.Error("Error initializing netsnmp", "err", err)
+		logger.Error("Error initializing MIB loader", "err", err)
 		os.Exit(1)
 	}
 

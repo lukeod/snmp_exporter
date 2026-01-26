@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
+	github.com/golangsnmp/gomib v0.0.1
 	github.com/gosnmp/gosnmp v1.43.1
 	github.com/itchyny/timefmt-go v0.1.7
 	github.com/prometheus/client_golang v1.23.2
