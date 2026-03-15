@@ -183,6 +183,32 @@ func TestTreePrepare(t *testing.T) {
 			in:  &Node{Oid: "1", Type: "OctectString", TextualConvention: "InetAddress"},
 			out: &Node{Oid: "1", Type: "InetAddress", TextualConvention: "InetAddress"},
 		},
+		// RFC 4001 InetAddress zone types.
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "InetAddressIPv4z"},
+			out: &Node{Oid: "1", Type: "InetAddressIPv4z", TextualConvention: "InetAddressIPv4z"},
+		},
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "InetAddressIPv6z"},
+			out: &Node{Oid: "1", Type: "InetAddressIPv6z", TextualConvention: "InetAddressIPv6z"},
+		},
+		// RFC 3419 TransportAddress types.
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "TransportAddressIPv4"},
+			out: &Node{Oid: "1", Type: "TransportAddressIPv4", TextualConvention: "TransportAddressIPv4"},
+		},
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "TransportAddressIPv6"},
+			out: &Node{Oid: "1", Type: "TransportAddressIPv6", TextualConvention: "TransportAddressIPv6"},
+		},
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "TransportAddressIPv4z"},
+			out: &Node{Oid: "1", Type: "TransportAddressIPv4z", TextualConvention: "TransportAddressIPv4z"},
+		},
+		{
+			in:  &Node{Oid: "1", Type: "OctetString", TextualConvention: "TransportAddressIPv6z"},
+			out: &Node{Oid: "1", Type: "TransportAddressIPv6z", TextualConvention: "TransportAddressIPv6z"},
+		},
 		// NTPTimeStamp
 		{
 			in:  &Node{Oid: "1", Type: "OctectString", TextualConvention: "NTPTimeStamp"},

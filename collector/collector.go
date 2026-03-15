@@ -42,15 +42,37 @@ var (
 	srcAddress             = kingpin.Flag("snmp.source-address", "Source address to send snmp from in the format 'address:port' to use when connecting targets. If the port parameter is empty or '0', as in '127.0.0.1:' or '[::1]:0', a source port number is automatically (random) chosen.").Default("").String()
 )
 
+// typeDisplayHints maps known OCTET STRING types to their fixed size and
+// RFC-defined DISPLAY-HINT string, allowing formatting via applyDisplayHint
+// instead of type-specific code.
+var typeDisplayHints = map[string]struct {
+	size int
+	hint string
+}{
+	"PhysAddress48":         {6, "1x:"},                                  // RFC 2579
+	"InetAddressIPv4":       {4, "1d.1d.1d.1d"},                          // RFC 4001
+	"InetAddressIPv6":       {16, "2x:"},                                 // RFC 4001
+	"InetAddressIPv4z":      {8, "1d.1d.1d.1d%4d"},                       // RFC 4001
+	"InetAddressIPv6z":      {20, "2x:2x:2x:2x:2x:2x:2x:2x%4d"},          // RFC 4001
+	"TransportAddressIPv4":  {6, "1d.1d.1d.1d:2d"},                       // RFC 3419
+	"TransportAddressIPv6":  {18, "0a[2x:2x:2x:2x:2x:2x:2x:2x]0a:2d"},    // RFC 3419
+	"TransportAddressIPv4z": {10, "1d.1d.1d.1d%4d:2d"},                   // RFC 3419
+	"TransportAddressIPv6z": {22, "0a[2x:2x:2x:2x:2x:2x:2x:2x%4d]0a:2d"}, // RFC 3419
+}
+
 // Types preceded by an enum with their actual type.
 var combinedTypeMapping = map[string]map[int]string{
 	"InetAddress": {
 		1: "InetAddressIPv4",
 		2: "InetAddressIPv6",
+		3: "InetAddressIPv4z",
+		4: "InetAddressIPv6z",
 	},
 	"InetAddressMissingSize": {
 		1: "InetAddressIPv4",
 		2: "InetAddressIPv6",
+		3: "InetAddressIPv4z",
+		4: "InetAddressIPv6z",
 	},
 	"LldpPortId": {
 		1: "DisplayString",
@@ -845,6 +867,12 @@ func pduValueAsString(pdu *gosnmp.SnmpPDU, typ, displayHint string, metrics Metr
 		if typ == "" || typ == "Bits" {
 			typ = "OctetString"
 		}
+		// Use display hints for known address types.
+		if ht, ok := typeDisplayHints[typ]; ok {
+			if result, ok := applyDisplayHint(ht.hint, v); ok {
+				return strings.ToValidUTF8(result, "�")
+			}
+		}
 		// Reuse the OID index parsing code.
 		parts := make([]int, len(v))
 		for i, o := range v {
@@ -889,18 +917,25 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 		return indexOidsAsString(indexOids, "OctetString", subOid[1]+2, false, enumValues)
 	}
 
+	// Use display hints for known address types.
+	if ht, ok := typeDisplayHints[typ]; ok {
+		subOid, indexOids := splitOid(indexOids, ht.size)
+		data := make([]byte, len(subOid))
+		for i, o := range subOid {
+			data[i] = byte(o)
+		}
+		result, ok := applyDisplayHint(ht.hint, data)
+		if !ok {
+			result = fmt.Sprintf("0x%X", string(data))
+		}
+		return result, subOid, indexOids
+	}
+
 	switch typ {
 	case "Integer32", "Integer", "gauge", "counter":
 		// Extract the oid for this index, and keep the remainder for the next index.
 		subOid, indexOids := splitOid(indexOids, 1)
 		return fmt.Sprintf("%d", subOid[0]), subOid, indexOids
-	case "PhysAddress48":
-		subOid, indexOids := splitOid(indexOids, 6)
-		parts := make([]string, 6)
-		for i, o := range subOid {
-			parts[i] = fmt.Sprintf("%02X", o)
-		}
-		return strings.Join(parts, ":"), subOid, indexOids
 	case "OctetString":
 		var subOid []int
 		// The length of fixed size indexes come from the MIB.
@@ -941,20 +976,6 @@ func indexOidsAsString(indexOids []int, typ string, fixedSize int, implied bool,
 		}
 		// ASCII, so can convert staight to utf-8.
 		return string(parts), subOid, indexOids
-	case "InetAddressIPv4":
-		subOid, indexOids := splitOid(indexOids, 4)
-		parts := make([]string, 4)
-		for i, o := range subOid {
-			parts[i] = strconv.Itoa(o)
-		}
-		return strings.Join(parts, "."), subOid, indexOids
-	case "InetAddressIPv6":
-		subOid, indexOids := splitOid(indexOids, 16)
-		parts := make([]any, 16)
-		for i, o := range subOid {
-			parts[i] = o
-		}
-		return fmt.Sprintf("%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X", parts...), subOid, indexOids
 	case "EnumAsInfo":
 		subOid, indexOids := splitOid(indexOids, 1)
 		value, ok := enumValues[subOid[0]]
