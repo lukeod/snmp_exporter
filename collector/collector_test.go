@@ -809,6 +809,21 @@ func TestPduValueAsString(t *testing.T) {
 			result: "00:1A:2B:3C:4D:5E",
 		},
 		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{0x00, 0x1a, 0x2b, 0x3c}},
+			typ:    "PhysAddress48",
+			result: "0x001A2B3C",
+		},
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{1, 2, 3}},
+			typ:    "InetAddressIPv4",
+			result: "0x010203",
+		},
+		{
+			pdu:    &gosnmp.SnmpPDU{Value: []byte{1, 2, 3, 4, 5, 6, 7, 8}},
+			typ:    "InetAddressIPv6",
+			result: "0x0102030405060708",
+		},
+		{
 			pdu:         &gosnmp.SnmpPDU{Value: []byte{192, 168, 1, 1}},
 			typ:         "OctetString",
 			displayHint: "1d.1d.1d.1d",

@@ -845,17 +845,43 @@ func pduValueAsString(pdu *gosnmp.SnmpPDU, typ, displayHint string, metrics Metr
 		if typ == "" || typ == "Bits" {
 			typ = "OctetString"
 		}
-		// Reuse the OID index parsing code.
-		parts := make([]int, len(v))
-		for i, o := range v {
-			parts[i] = int(o)
+		switch typ {
+		case "DisplayString":
+			return strings.ToValidUTF8(string(v), "�")
+		case "PhysAddress48":
+			if len(v) != 6 {
+				return fmt.Sprintf("0x%X", v)
+			}
+			parts := make([]string, 6)
+			for i, b := range v {
+				parts[i] = fmt.Sprintf("%02X", b)
+			}
+			return strings.Join(parts, ":")
+		case "InetAddressIPv4":
+			if len(v) != 4 {
+				return fmt.Sprintf("0x%X", v)
+			}
+			parts := make([]string, 4)
+			for i, b := range v {
+				parts[i] = strconv.Itoa(int(b))
+			}
+			return strings.Join(parts, ".")
+		case "InetAddressIPv6":
+			if len(v) != 16 {
+				return fmt.Sprintf("0x%X", v)
+			}
+			parts := make([]any, 16)
+			for i, b := range v {
+				parts[i] = b
+			}
+			return fmt.Sprintf("%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X", parts...)
+		default:
+			// OctetString and anything else: hex format.
+			if len(v) == 0 {
+				return ""
+			}
+			return fmt.Sprintf("0x%X", v)
 		}
-		if typ == "OctetString" || typ == "DisplayString" {
-			// Prepend the length, as it is explicit in an index.
-			parts = append([]int{len(v)}, parts...)
-		}
-		str, _, _ := indexOidsAsString(parts, typ, 0, false, nil)
-		return strings.ToValidUTF8(str, "�")
 	case nil:
 		return ""
 	default:
