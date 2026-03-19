@@ -1,0 +1,352 @@
+-- Minimal MIB for snmp_exporter generator tests.
+-- Covers: scalars, simple table, AUGMENTS, IMPLIED index,
+-- InetAddressType+InetAddress combined indexes, BITS, PhysAddress,
+-- DisplayString, counters, gauges, enums.
+
+EXPORTERTEST-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Counter32, Counter64, Gauge32,
+    Integer32, TimeTicks, Unsigned32, enterprises
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, PhysAddress
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    InetAddressType, InetAddress, InetPortNumber
+        FROM EXPORTERTEST-TYPES-MIB;
+
+exportertestMIB MODULE-IDENTITY
+    LAST-UPDATED "202603190000Z"
+    ORGANIZATION "Test"
+    CONTACT-INFO "test"
+    DESCRIPTION  "MIB for snmp_exporter generator tests"
+    REVISION     "202603190000Z"
+    DESCRIPTION  "Initial version"
+    ::= { enterprises 99991 }
+
+-- =====================================================================
+-- Scalars
+-- =====================================================================
+
+testScalars OBJECT IDENTIFIER ::= { exportertestMIB 1 }
+
+testSysUpTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "System uptime"
+    ::= { testScalars 1 }
+
+testSysDescr OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "System description"
+    ::= { testScalars 2 }
+
+testErrorBits OBJECT-TYPE
+    SYNTAX      BITS {
+                    linkDown(0),
+                    configError(1),
+                    overTemp(2),
+                    fanFail(3),
+                    psuFail(4),
+                    memLow(5),
+                    cpuHigh(6),
+                    diskFull(7)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Error state bitmask"
+    ::= { testScalars 3 }
+
+-- =====================================================================
+-- testIfTable - simple table (like ifTable)
+-- =====================================================================
+
+testInterfaces OBJECT IDENTIFIER ::= { exportertestMIB 2 }
+
+testIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF TestIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Interface table"
+    ::= { testInterfaces 1 }
+
+testIfEntry OBJECT-TYPE
+    SYNTAX      TestIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Interface entry"
+    INDEX       { testIfIndex }
+    ::= { testIfTable 1 }
+
+TestIfEntry ::= SEQUENCE {
+    testIfIndex       Integer32,
+    testIfDescr       DisplayString,
+    testIfType        INTEGER,
+    testIfPhysAddress PhysAddress,
+    testIfInOctets    Counter32,
+    testIfOutOctets   Counter32,
+    testIfSpeed       Gauge32
+}
+
+testIfIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Interface index"
+    ::= { testIfEntry 1 }
+
+testIfDescr OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Interface description"
+    ::= { testIfEntry 2 }
+
+testIfType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    other(1),
+                    ethernet(6),
+                    loopback(24),
+                    tunnel(131),
+                    l2vlan(135)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Interface type"
+    ::= { testIfEntry 3 }
+
+testIfPhysAddress OBJECT-TYPE
+    SYNTAX      PhysAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Interface physical address"
+    ::= { testIfEntry 4 }
+
+testIfInOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Inbound octets"
+    ::= { testIfEntry 5 }
+
+testIfOutOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Outbound octets"
+    ::= { testIfEntry 6 }
+
+testIfSpeed OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Interface speed in bits per second"
+    ::= { testIfEntry 7 }
+
+-- =====================================================================
+-- testIfXTable - augments testIfEntry (like ifXTable)
+-- =====================================================================
+
+testIfXTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF TestIfXEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Extended interface table"
+    ::= { testInterfaces 2 }
+
+testIfXEntry OBJECT-TYPE
+    SYNTAX      TestIfXEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Extended interface entry"
+    AUGMENTS    { testIfEntry }
+    ::= { testIfXTable 1 }
+
+TestIfXEntry ::= SEQUENCE {
+    testIfName          DisplayString,
+    testIfHCInOctets    Counter64,
+    testIfHCOutOctets   Counter64
+}
+
+testIfName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Interface name"
+    ::= { testIfXEntry 1 }
+
+testIfHCInOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "High-capacity inbound octets"
+    ::= { testIfXEntry 2 }
+
+testIfHCOutOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "High-capacity outbound octets"
+    ::= { testIfXEntry 3 }
+
+-- =====================================================================
+-- testImpliedTable - table with IMPLIED index
+-- =====================================================================
+
+testTargetObjects OBJECT IDENTIFIER ::= { exportertestMIB 3 }
+
+testTargetAddrTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF TestTargetAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Target address table with IMPLIED index"
+    ::= { testTargetObjects 1 }
+
+testTargetAddrEntry OBJECT-TYPE
+    SYNTAX      TestTargetAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Target address entry"
+    INDEX       { IMPLIED testTargetAddrName }
+    ::= { testTargetAddrTable 1 }
+
+TestTargetAddrEntry ::= SEQUENCE {
+    testTargetAddrName    OCTET STRING,
+    testTargetAddrTDomain OBJECT IDENTIFIER,
+    testTargetAddrStatus  INTEGER
+}
+
+testTargetAddrName OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (1..32))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Target address name (IMPLIED index)"
+    ::= { testTargetAddrEntry 1 }
+
+testTargetAddrTDomain OBJECT-TYPE
+    SYNTAX      OBJECT IDENTIFIER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Transport domain"
+    ::= { testTargetAddrEntry 2 }
+
+testTargetAddrStatus OBJECT-TYPE
+    SYNTAX      INTEGER { active(1), notInService(2), notReady(3) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Row status"
+    ::= { testTargetAddrEntry 3 }
+
+-- =====================================================================
+-- testConnTable - InetAddressType+InetAddress combined index
+-- =====================================================================
+
+testConnObjects OBJECT IDENTIFIER ::= { exportertestMIB 4 }
+
+testConnTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF TestConnEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Connection table with InetAddress indexes"
+    ::= { testConnObjects 1 }
+
+testConnEntry OBJECT-TYPE
+    SYNTAX      TestConnEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Connection entry"
+    INDEX       { testConnLocalAddressType, testConnLocalAddress,
+                  testConnLocalPort,
+                  testConnRemAddressType, testConnRemAddress,
+                  testConnRemPort }
+    ::= { testConnTable 1 }
+
+TestConnEntry ::= SEQUENCE {
+    testConnLocalAddressType InetAddressType,
+    testConnLocalAddress     InetAddress,
+    testConnLocalPort        InetPortNumber,
+    testConnRemAddressType   InetAddressType,
+    testConnRemAddress       InetAddress,
+    testConnRemPort          InetPortNumber,
+    testConnState            INTEGER
+}
+
+testConnLocalAddressType OBJECT-TYPE
+    SYNTAX      InetAddressType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Local address type"
+    ::= { testConnEntry 1 }
+
+testConnLocalAddress OBJECT-TYPE
+    SYNTAX      InetAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Local address"
+    ::= { testConnEntry 2 }
+
+testConnLocalPort OBJECT-TYPE
+    SYNTAX      InetPortNumber
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Local port"
+    ::= { testConnEntry 3 }
+
+testConnRemAddressType OBJECT-TYPE
+    SYNTAX      InetAddressType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Remote address type"
+    ::= { testConnEntry 4 }
+
+testConnRemAddress OBJECT-TYPE
+    SYNTAX      InetAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Remote address"
+    ::= { testConnEntry 5 }
+
+testConnRemPort OBJECT-TYPE
+    SYNTAX      InetPortNumber
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Remote port"
+    ::= { testConnEntry 6 }
+
+testConnState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    closed(1),
+                    listen(2),
+                    synSent(3),
+                    established(5)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Connection state"
+    ::= { testConnEntry 7 }
+
+-- =====================================================================
+-- testFixedSizeTable - object with fixed SIZE for objectFixedSize tests
+-- =====================================================================
+
+testMiscObjects OBJECT IDENTIFIER ::= { exportertestMIB 5 }
+
+testVarSizeObject OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (1..255))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Variable-size octet string (not fixed)"
+    ::= { testMiscObjects 1 }
+
+testFixedSizeObject OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (8))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Fixed-size octet string"
+    ::= { testMiscObjects 2 }
+
+END

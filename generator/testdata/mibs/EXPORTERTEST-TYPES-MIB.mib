@@ -1,0 +1,39 @@
+-- Minimal types MIB for snmp_exporter generator tests.
+-- Defines TCs with exact names that tree.go's combinedTypes map expects.
+
+EXPORTERTEST-TYPES-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, Integer32, Unsigned32, enterprises
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION
+        FROM SNMPv2-TC;
+
+exportertestTypesMIB MODULE-IDENTITY
+    LAST-UPDATED "202603190000Z"
+    ORGANIZATION "Test"
+    CONTACT-INFO "test"
+    DESCRIPTION  "Types for snmp_exporter generator tests"
+    REVISION     "202603190000Z"
+    DESCRIPTION  "Initial version"
+    ::= { enterprises 99990 }
+
+-- These TC names must match exactly what tree.go combinedTypes expects.
+
+InetAddressType ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Type of internet address"
+    SYNTAX       INTEGER { unknown(0), ipv4(1), ipv6(2) }
+
+InetAddress ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "An internet address"
+    SYNTAX       OCTET STRING (SIZE (0..255))
+
+InetPortNumber ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d"
+    STATUS       current
+    DESCRIPTION  "A 16-bit port number"
+    SYNTAX       Unsigned32 (0..65535)
+
+END

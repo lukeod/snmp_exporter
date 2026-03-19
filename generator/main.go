@@ -14,14 +14,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	gomib "github.com/golangsnmp/gomib"
+	"github.com/golangsnmp/gomib/mib"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/promslog/flag"
 	"go.yaml.in/yaml/v2"
@@ -29,10 +30,8 @@ import (
 	"github.com/prometheus/snmp_exporter/config"
 )
 
-var cannotFindModuleRE = regexp.MustCompile(`Cannot find module \((.+)\): (.+)`)
-
 // Generate a snmp_exporter config and write it out.
-func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logger) error {
+func generateConfig(m *mib.Mib, logger *slog.Logger) error {
 	outputPath, err := filepath.Abs(*outputPath)
 	if err != nil {
 		return fmt.Errorf("unable to determine absolute path for output")
@@ -51,25 +50,14 @@ func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logge
 	outputConfig := config.Config{}
 	outputConfig.Auths = cfg.Auths
 	outputConfig.Modules = make(map[string]*config.Module, len(cfg.Modules))
-	for name, m := range cfg.Modules {
+	for name, mod := range cfg.Modules {
 		logger.Info("Generating config for module", "module", name)
-		// Give each module a copy of the tree so that it can be modified.
-		mNodes := nodes.Copy()
-		// Build the map with new pointers.
-		mNameToNode := map[string]*Node{}
-		walkNode(mNodes, func(n *Node) {
-			mNameToNode[n.Oid] = n
-			mNameToNode[n.Label] = n
-			if n.Module != "" {
-				mNameToNode[n.Module+"::"+n.Label] = n
-			}
-		})
-		out, err := generateConfigModule(m, mNodes, mNameToNode, logger)
+		out, err := generateConfigModule(mod, m, logger)
 		if err != nil {
 			return err
 		}
 		outputConfig.Modules[name] = out
-		outputConfig.Modules[name].WalkParams = m.WalkParams
+		outputConfig.Modules[name].WalkParams = mod.WalkParams
 		logger.Info("Generated metrics", "module", name, "metrics", len(outputConfig.Modules[name].Metrics))
 	}
 
@@ -92,6 +80,9 @@ func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logge
 	}
 	out = append([]byte("# WARNING: This file was auto-generated using snmp_exporter generator, manual changes will be lost.\n"), out...)
 	_, err = f.Write(out)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return fmt.Errorf("error writing to output file: %w", err)
 	}
@@ -99,15 +90,44 @@ func generateConfig(nodes *Node, nameToNode map[string]*Node, logger *slog.Logge
 	return nil
 }
 
+// loadMIBs loads all MIBs from the configured directories using gomib.
+func loadMIBs(logger *slog.Logger) (*mib.Mib, error) {
+	opts := []gomib.LoadOption{
+		gomib.WithResolverStrictness(mib.ResolverPermissive),
+		gomib.WithDiagnosticConfig(mib.DiagnosticConfig{FailAt: mib.SeverityFatal}),
+		gomib.WithLogger(logger),
+	}
+
+	var sources []gomib.Source
+	for _, dir := range *userMibsDir {
+		if dir == "" {
+			continue
+		}
+		src, err := gomib.Dir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("error opening MIB directory %s: %w", dir, err)
+		}
+		sources = append(sources, src)
+	}
+	if len(sources) == 0 {
+		logger.Info("No MIB directories specified, using system paths")
+		opts = append(opts, gomib.WithSystemPaths())
+	} else {
+		logger.Info("Loading MIBs", "from", *userMibsDir)
+		opts = append(opts, gomib.WithSource(sources...))
+	}
+
+	return gomib.Load(context.Background(), opts...)
+}
+
 var (
 	failOnParseErrors  = kingpin.Flag("fail-on-parse-errors", "Exit with a non-zero status if there are MIB parsing errors").Default("true").Bool()
-	snmpMIBOpts        = kingpin.Flag("snmp.mibopts", "Toggle various defaults controlling MIB parsing, see snmpwalk --help").Default("eu").String()
 	generateCommand    = kingpin.Command("generate", "Generate snmp.yml from generator.yml")
 	userMibsDir        = kingpin.Flag("mibs-dir", "Paths to mibs directory").Default("").Short('m').Strings()
 	generatorYmlPath   = generateCommand.Flag("generator-path", "Path to the input generator.yml file").Default("generator.yml").Short('g').String()
 	outputPath         = generateCommand.Flag("output-path", "Path to write the snmp_exporter's config file").Default("snmp.yml").Short('o').String()
-	parseErrorsCommand = kingpin.Command("parse_errors", "Debug: Print the parse errors output by NetSNMP")
-	dumpCommand        = kingpin.Command("dump", "Debug: Dump the parsed and prepared MIBs")
+	parseErrorsCommand = kingpin.Command("parse_errors", "Debug: Print the parse errors from MIB loading")
+	dumpCommand        = kingpin.Command("dump", "Debug: Dump the parsed and resolved MIBs")
 )
 
 func main() {
@@ -117,71 +137,103 @@ func main() {
 	command := kingpin.Parse()
 	logger := promslog.New(promslogConfig)
 
-	output, err := initSNMP(logger)
+	m, err := loadMIBs(logger)
 	if err != nil {
-		logger.Error("Error initializing netsnmp", "err", err)
+		logger.Warn("MIB loading produced errors", "err", err)
+	}
+	if m == nil {
+		logger.Error("Failed to load MIBs")
 		os.Exit(1)
 	}
 
-	parseOutput := scanParseOutput(logger, output)
-	parseErrors := len(parseOutput)
-
-	nodes := getMIBTree()
-	nameToNode := prepareTree(nodes, logger)
+	// Collect diagnostics.
+	diags := m.Diagnostics()
+	parseErrors := 0
+	for _, d := range diags {
+		if d.Severity.AtLeast(mib.SeverityError) {
+			parseErrors++
+		}
+	}
+	if parseErrors > 0 {
+		logger.Warn("MIB loading reported errors", "errors", parseErrors)
+	}
 
 	switch command {
 	case generateCommand.FullCommand():
 		if *failOnParseErrors && parseErrors > 0 {
 			logger.Error("Failing on reported parse error(s)", "help", "Use 'generator parse_errors' command to see errors, --no-fail-on-parse-errors to ignore")
 		} else {
-			err := generateConfig(nodes, nameToNode, logger)
+			err := generateConfig(m, logger)
 			if err != nil {
-				logger.Error("Error generating config netsnmp", "err", err)
+				logger.Error("Error generating config", "err", err)
 				os.Exit(1)
 			}
 		}
 	case parseErrorsCommand.FullCommand():
-		if parseErrors > 0 {
-			fmt.Printf("%s\n", strings.Join(parseOutput, "\n"))
+		if len(diags) > 0 {
+			for _, d := range diags {
+				fmt.Printf("[%s] %s: %s\n", d.Severity, d.Module, d.Message)
+			}
 		} else {
 			logger.Info("No parse errors")
 		}
 	case dumpCommand.FullCommand():
-		walkNode(nodes, func(n *Node) {
-			t := n.Type
-			if n.FixedSize != 0 {
-				t = fmt.Sprintf("%s(%d)", n.Type, n.FixedSize)
-			}
-			implied := ""
-			if n.ImpliedIndex {
-				implied = "(implied)"
-			}
-			fmt.Printf("%s %s %s %q %q %s%s %v %s\n",
-				n.Oid, n.Label, t, n.TextualConvention, n.Hint, n.Indexes, implied, n.EnumValues, n.Description)
-		})
+		for nd := range m.Nodes() {
+			dumpNode(nd)
+		}
 	}
 	if *failOnParseErrors && parseErrors > 0 {
 		os.Exit(1)
 	}
 }
 
-func scanParseOutput(logger *slog.Logger, output string) []string {
-	var parseOutput []string
-	output = strings.TrimSpace(strings.ToValidUTF8(output, "�"))
-	if output != "" {
-		parseOutput = strings.Split(output, "\n")
-	}
-	parseErrors := len(parseOutput)
+func dumpNode(nd *mib.Node) {
+	obj := nd.Object()
+	name := nd.Name()
+	oidStr := nd.OID().String()
 
-	if parseErrors > 0 {
-		logger.Warn("NetSNMP reported parse error(s)", "errors", parseErrors)
-	}
+	tc := ""
+	hint := ""
+	desc := ""
+	t := ""
+	var indexNames []string
+	implied := ""
+	enums := map[int]string{}
+	fixedSize := 0
 
-	for _, line := range parseOutput {
-		if strings.HasPrefix(line, "Cannot find module") {
-			missing := cannotFindModuleRE.FindStringSubmatch(line)
-			logger.Error("Missing MIB", "mib", missing[1], "from", missing[2])
+	if obj != nil {
+		tc = objectTCName(obj)
+		hint = obj.EffectiveDisplayHint()
+		desc = trimDescription(obj.Description())
+		if obj.Type() != nil {
+			t = obj.Type().EffectiveBase().String()
 		}
+		fixedSize = objectFixedSize(obj)
+		enums = objectEnumValues(obj)
+
+		if obj.Kind() == mib.KindColumn {
+			if row := obj.Row(); row != nil {
+				indexes := row.EffectiveIndexes()
+				for _, idx := range indexes {
+					if idx.Object != nil {
+						indexNames = append(indexNames, idx.Object.Name())
+					} else {
+						indexNames = append(indexNames, idx.TypeName)
+					}
+				}
+				if len(indexes) > 0 && indexes[len(indexes)-1].Implied {
+					implied = "(implied)"
+				}
+			}
+		}
+	} else {
+		desc = nd.Description()
 	}
-	return parseOutput
+
+	typeStr := t
+	if fixedSize != 0 {
+		typeStr = fmt.Sprintf("%s(%d)", t, fixedSize)
+	}
+	fmt.Printf("%s %s %s %q %q %v%s %v %s\n",
+		oidStr, name, typeStr, tc, hint, indexNames, implied, enums, desc)
 }

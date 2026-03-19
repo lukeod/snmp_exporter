@@ -19,207 +19,168 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/golangsnmp/gomib/mib"
 	"github.com/prometheus/snmp_exporter/config"
 )
 
 // These types have one following the other.
 // We need to check indexes and sequences have them
 // in the right order, so the exporter can handle them.
+//
+// The original net-snmp generator also had "InetAddressMissingSize" here,
+// which was a net-snmp artifact for InetAddress without a SIZE constraint.
+// gomib resolves InetAddress through its type chain and never produces that
+// type name, so it is not needed.
 var combinedTypes = map[string]string{
-	"InetAddress":            "InetAddressType",
-	"InetAddressMissingSize": "InetAddressType",
-	"LldpPortId":             "LldpPortIdSubtype",
+	"InetAddress": "InetAddressType",
+	"LldpPortId":  "LldpPortIdSubtype",
 }
 
-// Helper to walk MIB nodes.
-func walkNode(n *Node, f func(n *Node)) {
-	f(n)
-	for _, c := range n.Children {
-		walkNode(c, f)
-	}
-}
+// Include both ASCII and UTF-8 in DisplayString, even though DisplayString
+// is technically only ASCII.
+var displayStringRe = regexp.MustCompile(`^\d+[at]$`)
 
-// Transform the tree.
-func prepareTree(nodes *Node, logger *slog.Logger) map[string]*Node {
-	// Build a map from names and oids to nodes.
-	nameToNode := map[string]*Node{}
-	walkNode(nodes, func(n *Node) {
-		nameToNode[n.Oid] = n
-		nameToNode[n.Label] = n
-	})
-
-	// Trim down description to first sentence, removing extra whitespace.
-	walkNode(nodes, func(n *Node) {
-		s := strings.Join(strings.Fields(n.Description), " ")
-		n.Description = strings.Split(s, ". ")[0]
-	})
-
-	// Fix indexes to "INTEGER" rather than an object name.
-	// Example: snSlotsEntry in LANOPTICS-HUB-MIB.
-	walkNode(nodes, func(n *Node) {
-		indexes := []string{}
-		for _, i := range n.Indexes {
-			if i == "INTEGER" {
-				// Use the TableEntry name.
-				indexes = append(indexes, n.Label)
-			} else {
-				indexes = append(indexes, i)
-			}
-		}
-		n.Indexes = indexes
-	})
-
-	// Copy over indexes based on augments.
-	walkNode(nodes, func(n *Node) {
-		if n.Augments == "" {
-			return
-		}
-		augmented, ok := nameToNode[n.Augments]
-		if !ok {
-			logger.Warn("Can't find augmenting node", "augments", n.Augments, "node", n.Label)
-			return
-		}
-		for _, c := range n.Children {
-			c.Indexes = augmented.Indexes
-			c.ImpliedIndex = augmented.ImpliedIndex
-		}
-		n.Indexes = augmented.Indexes
-		n.ImpliedIndex = augmented.ImpliedIndex
-	})
-
-	// Copy indexes from table entries down to the entries.
-	walkNode(nodes, func(n *Node) {
-		if len(n.Indexes) != 0 {
-			for _, c := range n.Children {
-				c.Indexes = n.Indexes
-				c.ImpliedIndex = n.ImpliedIndex
-			}
-		}
-	})
-
-	// Include both ASCII and UTF-8 in DisplayString, even though DisplayString
-	// is technically only ASCII.
-	displayStringRe := regexp.MustCompile(`^\d+[at]$`)
-
-	// Apply various tweaks to the types.
-	walkNode(nodes, func(n *Node) {
-		// Set type on MAC addresses and strings.
-		// RFC 2579
-		if n.Hint == "1x:" {
-			n.Type = "PhysAddress48"
-		}
-		if displayStringRe.MatchString(n.Hint) {
-			n.Type = "DisplayString"
-		}
-
-		// Some MIBs refer to RFC1213 for this, which is too
-		// old to have the right hint set.
-		if n.TextualConvention == "DisplayString" {
-			n.Type = "DisplayString"
-		}
-		if n.TextualConvention == "PhysAddress" {
-			n.Type = "PhysAddress48"
-		}
-
-		// Promote Opaque Float/Double textual convention to type.
-		if n.TextualConvention == "Float" || n.TextualConvention == "Double" {
-			n.Type = n.TextualConvention
-		}
-
-		// Convert RFC 2579 DateAndTime textual convention to type.
-		if n.TextualConvention == "DateAndTime" {
-			n.Type = "DateAndTime"
-		}
-		if n.TextualConvention == "ParseDateAndTime" {
-			n.Type = "ParseDateAndTime"
-		}
-		if n.TextualConvention == "NTPTimeStamp" {
-			n.Type = "NTPTimeStamp"
-		}
-		// Convert RFC 4001 InetAddress types textual convention to type.
-		if n.TextualConvention == "InetAddressIPv4" || n.TextualConvention == "InetAddressIPv6" || n.TextualConvention == "InetAddress" {
-			n.Type = n.TextualConvention
-		}
-		// Convert LLDP-MIB LldpPortId type textual convention to type.
-		if n.TextualConvention == "LldpPortId" {
-			n.Type = n.TextualConvention
-		}
-	})
-
-	return nameToNode
-}
-
+// metricType validates a Prometheus metric type string for use in
+// generator.yml overrides. The set of accepted types here must stay
+// in sync with the types returned by objectMetricType.
 func metricType(t string) (string, bool) {
 	if _, ok := combinedTypes[t]; ok {
 		return t, true
 	}
 	switch t {
-	case "gauge", "INTEGER", "GAUGE", "TIMETICKS", "UINTEGER", "UNSIGNED32", "INTEGER32":
+	case "gauge":
 		return "gauge", true
-	case "counter", "COUNTER", "COUNTER64":
+	case "counter":
 		return "counter", true
-	case "OctetString", "OCTETSTR", "OBJID":
+	case "OctetString":
 		return "OctetString", true
-	case "BITSTRING":
+	case "Bits":
 		return "Bits", true
-	case "InetAddressIPv4", "IpAddr", "IPADDR", "NETADDR":
-		return "InetAddressIPv4", true
-	case "PhysAddress48", "DisplayString", "Float", "Double", "InetAddressIPv6":
+	case "InetAddressIPv4", "InetAddressIPv6":
 		return t, true
-	case "DateAndTime":
+	case "PhysAddress48", "DisplayString", "Float", "Double":
 		return t, true
-	case "ParseDateAndTime":
-		return t, true
-	case "NTPTimeStamp":
+	case "DateAndTime", "ParseDateAndTime", "NTPTimeStamp":
 		return t, true
 	case "EnumAsInfo", "EnumAsStateSet":
 		return t, true
 	default:
-		// Unsupported type.
 		return "", false
 	}
 }
 
-func metricAccess(a string) bool {
-	switch a {
-	case "ACCESS_READONLY", "ACCESS_READWRITE", "ACCESS_CREATE", "ACCESS_NOACCESS":
-		return true
+// objectMetricType determines the Prometheus metric type for a gomib Object,
+// applying TC-based and hint-based type promotion. The set of types returned
+// here must stay in sync with what metricType accepts for overrides.
+func objectMetricType(obj *mib.Object) (string, bool) {
+	if obj.Type() == nil {
+		return "", false
+	}
+
+	tcName := objectTCName(obj)
+	hint := obj.EffectiveDisplayHint()
+
+	// TC-based type promotion.
+	switch tcName {
+	case "DisplayString":
+		return "DisplayString", true
+	case "PhysAddress":
+		return "PhysAddress48", true
+	case "Float", "Double":
+		return tcName, true
+	case "DateAndTime":
+		return "DateAndTime", true
+	case "NTPTimeStamp":
+		return "NTPTimeStamp", true
+	case "InetAddressIPv4", "InetAddressIPv6", "InetAddress":
+		return tcName, true
+	case "LldpPortId":
+		return tcName, true
+	}
+
+	// Hint-based type promotion.
+	// RFC 2579
+	if hint == "1x:" {
+		return "PhysAddress48", true
+	}
+	if displayStringRe.MatchString(hint) {
+		return "DisplayString", true
+	}
+
+	// Base type mapping.
+	switch obj.Type().EffectiveBase() {
+	case mib.BaseInteger32, mib.BaseUnsigned32, mib.BaseGauge32, mib.BaseTimeTicks:
+		return "gauge", true
+	case mib.BaseCounter32, mib.BaseCounter64:
+		return "counter", true
+	case mib.BaseOctetString, mib.BaseObjectIdentifier, mib.BaseOpaque:
+		return "OctetString", true
+	case mib.BaseBits:
+		return "Bits", true
+	case mib.BaseIpAddress:
+		return "InetAddressIPv4", true
 	default:
-		// The others are inaccessible metrics.
-		return false
+		return "", false
 	}
 }
 
-// Reduce a set of overlapping OID subtrees.
-func minimizeOids(oids []string) []string {
-	sort.Strings(oids)
-	prevOid := ""
-	minimized := []string{}
-	for _, oid := range oids {
-		if !strings.HasPrefix(oid+".", prevOid) || prevOid == "" {
-			minimized = append(minimized, oid)
-			prevOid = oid + "."
+// objectTCName returns the textual convention name from the object's type chain.
+func objectTCName(obj *mib.Object) string {
+	for t := obj.Type(); t != nil; t = t.Parent() {
+		if t.IsTextualConvention() {
+			return t.Name()
 		}
 	}
-	return minimized
+	return ""
 }
 
-// Search node tree for the longest OID match.
-func searchNodeTree(oid string, node *Node) *Node {
-	if node == nil || !strings.HasPrefix(oid+".", node.Oid+".") {
+// objectFixedSize returns the fixed size of an object's type, or 0 if not fixed.
+func objectFixedSize(obj *mib.Object) int {
+	sizes := obj.EffectiveSizes()
+	if len(sizes) == 1 && sizes[0].Min == sizes[0].Max && sizes[0].Min > 0 {
+		return int(sizes[0].Min)
+	}
+	return 0
+}
+
+// enumMap converts a gomib NamedValue slice to a map[int]string.
+func enumMap(nvs []mib.NamedValue) map[int]string {
+	if len(nvs) == 0 {
 		return nil
 	}
-
-	for _, child := range node.Children {
-		match := searchNodeTree(oid, child)
-		if match != nil {
-			return match
-		}
+	m := make(map[int]string, len(nvs))
+	for _, nv := range nvs {
+		m[int(nv.Value)] = nv.Label
 	}
-	return node
+	return m
+}
+
+// objectEnumValues returns the enum or BITS named values for an object.
+// BITS named values are stored separately from INTEGER enums in gomib,
+// but the snmp_exporter config uses a single enum_values map for both.
+func objectEnumValues(obj *mib.Object) map[int]string {
+	if obj.Type() == nil {
+		return nil
+	}
+	if obj.Type().EffectiveBase() == mib.BaseBits {
+		return enumMap(obj.EffectiveBits())
+	}
+	return enumMap(obj.EffectiveEnums())
+}
+
+// promAccess reports whether the object's access level makes it eligible
+// for metric generation. AccessNotAccessible is included because table
+// index objects are often not-accessible but must appear in the generated
+// config so the exporter can decode row instance suffixes.
+func promAccess(a mib.Access) bool {
+	switch a {
+	case mib.AccessReadOnly, mib.AccessReadWrite, mib.AccessReadCreate, mib.AccessNotAccessible:
+		return true
+	default:
+		return false
+	}
 }
 
 type oidMetricType uint8
@@ -231,214 +192,250 @@ const (
 	oidSubtree
 )
 
-// Find node in SNMP MIB tree that represents the metric.
-func getMetricNode(oid string, node *Node, nameToNode map[string]*Node) (*Node, oidMetricType) {
-	// Check if is a known OID/name.
-	n, ok := nameToNode[oid]
-	if ok {
-		// Known node, check if OID is a valid metric or a subtree.
-		_, ok = metricType(n.Type)
-		if ok && metricAccess(n.Access) && len(n.Indexes) == 0 {
-			return n, oidScalar
+// classifyOID resolves an OID string and classifies it as scalar, instance, or subtree.
+func classifyOID(oidStr string, m *mib.Mib, typeOverrides map[string]string) (*mib.Node, oidMetricType) {
+	nd := m.Resolve(oidStr)
+	if nd != nil {
+		obj := nd.Object()
+		if obj != nil {
+			override := typeOverrides[nd.OID().String()]
+			isValid := false
+			if override != "" {
+				_, isValid = metricType(override)
+			} else {
+				_, isValid = objectMetricType(obj)
+			}
+			if isValid && promAccess(obj.Access()) && obj.Kind() == mib.KindScalar {
+				return nd, oidScalar
+			}
 		}
-		return n, oidSubtree
+		return nd, oidSubtree
 	}
 
-	// Unknown OID/name, search Node tree for longest match.
-	n = searchNodeTree(oid, node)
-	if n == nil {
+	// Not a known name/OID. Try as numeric OID with instance suffix.
+	oid, err := mib.ParseOID(oidStr)
+	if err != nil {
 		return nil, oidNotFound
 	}
-
-	// Table instances must be a valid metric node and have an index.
-	_, ok = metricType(n.Type)
-	ok = ok && metricAccess(n.Access)
-	if !ok || len(n.Indexes) == 0 {
+	nd = m.LongestPrefixByOID(oid)
+	if nd == nil {
 		return nil, oidNotFound
 	}
-	return n, oidInstance
+	obj := nd.Object()
+	if obj == nil {
+		return nil, oidNotFound
+	}
+	_, isValid := resolveType(obj, typeOverrides)
+	if !isValid || !promAccess(obj.Access()) || obj.Kind() != mib.KindColumn {
+		return nil, oidNotFound
+	}
+	return nd, oidInstance
 }
 
-// In the case of multiple nodes with the same label try to return the node
-// where the OID matches in every branch apart from the last one.
-func getIndexNode(lookup string, nameToNode map[string]*Node, metricOid string) *Node {
-	for _, node := range nameToNode {
-		if node.Label != lookup {
-			continue
-		}
+// trimDescription normalizes and truncates a description to its first sentence.
+func trimDescription(desc string) string {
+	s := strings.Join(strings.Fields(desc), " ")
+	return strings.Split(s, ". ")[0]
+}
 
-		oid := strings.Split(metricOid, ".")
-		oidPrefix := strings.Join(oid[:len(oid)-1], ".")
+// resolveType determines the metric type for a gomib Object, checking
+// typeOverrides first, then falling back to objectMetricType.
+func resolveType(obj *mib.Object, typeOverrides map[string]string) (string, bool) {
+	if override, ok := typeOverrides[obj.Node().OID().String()]; ok {
+		return metricType(override)
+	}
+	return objectMetricType(obj)
+}
 
-		if strings.HasPrefix(node.Oid, oidPrefix) {
-			return node
+// processMetricNode builds a config.Metric from a gomib node, or returns nil if
+// the node should be skipped (unsupported type, inaccessible, ignored, etc.).
+func processMetricNode(nd *mib.Node, typeOverrides map[string]string, cfg *ModuleConfig, logger *slog.Logger) *config.Metric {
+	obj := nd.Object()
+	if obj == nil {
+		return nil
+	}
+
+	oidStr := nd.OID().String()
+
+	// Determine type (override takes priority).
+	t, ok := resolveType(obj, typeOverrides)
+	if !ok {
+		return nil
+	}
+
+	if !promAccess(obj.Access()) {
+		return nil
+	}
+
+	metricName := sanitizeLabelName(obj.Name())
+	if cfg.Overrides[metricName].Ignore {
+		return nil
+	}
+
+	metric := &config.Metric{
+		Name:       metricName,
+		Oid:        oidStr,
+		Type:       t,
+		Help:       trimDescription(obj.Description()) + " - " + oidStr,
+		Indexes:    []*config.Index{},
+		Lookups:    []*config.Lookup{},
+		EnumValues: objectEnumValues(obj),
+	}
+
+	// Get indexes from parent row for column objects.
+	var indexes []mib.IndexEntry
+	if obj.Kind() == mib.KindColumn {
+		if row := obj.Row(); row != nil {
+			indexes = row.EffectiveIndexes()
 		}
 	}
 
-	// If no node matches, revert to previous behavior.
-	return nameToNode[lookup]
+	// Afi (Address family)
+	prevType := ""
+	// Safi (Subsequent address family, e.g. Multicast/Unicast)
+	prev2Type := ""
+	for _, idx := range indexes {
+		if idx.Object == nil {
+			logger.Warn("Could not find index object for node", "node", obj.Name(), "index", idx.TypeName)
+			return nil
+		}
+
+		indexObj := idx.Object
+		indexType, ok := resolveType(indexObj, typeOverrides)
+		if !ok {
+			logger.Warn("Can't handle index type on node", "node", obj.Name(), "index", indexObj.Name(), "type", indexObj.Type().EffectiveBase().String())
+			return nil
+		}
+
+		index := &config.Index{
+			Labelname:  indexObj.Name(),
+			Type:       indexType,
+			FixedSize:  objectFixedSize(indexObj),
+			Implied:    idx.Implied,
+			EnumValues: objectEnumValues(indexObj),
+		}
+
+		// Convert (InetAddressType,InetAddress) to (InetAddress).
+		if subtype, ok := combinedTypes[index.Type]; ok {
+			switch subtype {
+			case prevType:
+				metric.Indexes = metric.Indexes[:len(metric.Indexes)-1]
+			case prev2Type:
+				metric.Indexes = metric.Indexes[:len(metric.Indexes)-2]
+			default:
+				logger.Warn("Can't handle index type on node, missing preceding", "node", obj.Name(), "type", index.Type, "missing", subtype)
+				return nil
+			}
+		}
+		prev2Type = prevType
+		prevType = objectTCName(indexObj)
+		metric.Indexes = append(metric.Indexes, index)
+	}
+
+	return metric
 }
 
-func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*Node, logger *slog.Logger) (*config.Module, error) {
+func generateConfigModule(cfg *ModuleConfig, m *mib.Mib, logger *slog.Logger) (*config.Module, error) {
 	out := &config.Module{}
 	needToWalk := map[string]struct{}{}
 	tableInstances := map[string][]string{}
 
-	// Apply type overrides for the current module.
+	// Build type overrides map keyed by OID string.
+	typeOverrides := map[string]string{}
 	for name, params := range cfg.Overrides {
 		if params.Type == "" {
 			continue
 		}
-		// Find node to override.
-		n, ok := nameToNode[name]
-		if !ok {
+		nd := m.Resolve(name)
+		if nd == nil {
 			logger.Warn("Could not find node to override type", "node", name)
 			continue
 		}
-		// params.Type validated at generator configuration.
-		n.Type = params.Type
+		typeOverrides[nd.OID().String()] = params.Type
 	}
 
-	// Remove redundant OIDs to be walked.
+	// Resolve walk OIDs.
 	toWalk := []string{}
 	for _, oid := range cfg.Walk {
 		if strings.HasPrefix(oid, ".") {
 			return nil, fmt.Errorf("invalid OID %s, prefix of '.' should be removed", oid)
 		}
-		// Resolve name to OID if possible.
-		n, ok := nameToNode[oid]
-		if ok {
-			toWalk = append(toWalk, n.Oid)
+		nd := m.Resolve(oid)
+		if nd != nil {
+			toWalk = append(toWalk, nd.OID().String())
 		} else {
 			toWalk = append(toWalk, oid)
 		}
 	}
 	toWalk = minimizeOids(toWalk)
 
-	// Find all top-level nodes.
-	metricNodes := map[*Node]struct{}{}
-	for _, oid := range toWalk {
-		metricNode, oidType := getMetricNode(oid, node, nameToNode)
+	// Classify walk OIDs and find top-level metric nodes.
+	metricNodes := map[*mib.Node]struct{}{}
+	for _, oidStr := range toWalk {
+		nd, oidType := classifyOID(oidStr, m, typeOverrides)
 		switch oidType {
 		case oidNotFound:
-			return nil, fmt.Errorf("cannot find oid '%s' to walk", oid)
+			return nil, fmt.Errorf("cannot find oid '%s' to walk", oidStr)
 		case oidSubtree:
-			needToWalk[oid] = struct{}{}
+			needToWalk[oidStr] = struct{}{}
 		case oidInstance:
-			// Add a trailing period to the OID to indicate a "Get" instead of a "Walk".
-			needToWalk[oid+"."] = struct{}{}
-			// Save instance index for lookup.
-			index := strings.Replace(oid, metricNode.Oid, "", 1)
-			tableInstances[metricNode.Oid] = append(tableInstances[metricNode.Oid], index)
+			needToWalk[oidStr+"."] = struct{}{}
+			ndOID := nd.OID().String()
+			index := strings.Replace(oidStr, ndOID, "", 1)
+			tableInstances[ndOID] = append(tableInstances[ndOID], index)
 		case oidScalar:
-			// Scalar OIDs must be accessed using index 0.
-			needToWalk[oid+".0."] = struct{}{}
+			needToWalk[oidStr+".0."] = struct{}{}
 		}
-		metricNodes[metricNode] = struct{}{}
+		if nd != nil {
+			metricNodes[nd] = struct{}{}
+		}
 	}
-	// Sort the metrics by OID to make the output deterministic.
-	metrics := make([]*Node, 0, len(metricNodes))
-	for key := range metricNodes {
-		metrics = append(metrics, key)
+
+	// Sort metrics by OID string for deterministic output. String comparison
+	// matches net-snmp's ordering, making it simpler to diff against the
+	// existing generator during migration.
+	sortedNodes := make([]*mib.Node, 0, len(metricNodes))
+	for nd := range metricNodes {
+		sortedNodes = append(sortedNodes, nd)
 	}
-	sort.Slice(metrics, func(i, j int) bool {
-		return metrics[i].Oid < metrics[j].Oid
+	sort.Slice(sortedNodes, func(i, j int) bool {
+		return sortedNodes[i].OID().String() < sortedNodes[j].OID().String()
 	})
 
-	// Find all the usable metrics.
-	for _, metricNode := range metrics {
-		walkNode(metricNode, func(n *Node) {
-			t, ok := metricType(n.Type)
-			if !ok {
-				return // Unsupported type.
+	// Walk metric subtrees and collect usable metrics.
+	for _, metricNode := range sortedNodes {
+		for nd := range metricNode.Subtree() {
+			metric := processMetricNode(nd, typeOverrides, cfg, logger)
+			if metric != nil {
+				out.Metrics = append(out.Metrics, metric)
 			}
-
-			if !metricAccess(n.Access) {
-				return // Inaccessible metrics.
-			}
-
-			metric := &config.Metric{
-				Name:       sanitizeLabelName(n.Label),
-				Oid:        n.Oid,
-				Type:       t,
-				Help:       n.Description + " - " + n.Oid,
-				Indexes:    []*config.Index{},
-				Lookups:    []*config.Lookup{},
-				EnumValues: n.EnumValues,
-			}
-
-			if cfg.Overrides[metric.Name].Ignore {
-				return // Ignored metric.
-			}
-
-			// Afi (Address family)
-			prevType := ""
-			// Safi (Subsequent address family, e.g. Multicast/Unicast)
-			prev2Type := ""
-			for count, i := range n.Indexes {
-				index := &config.Index{Labelname: i}
-				indexNode, ok := nameToNode[i]
-				if !ok {
-					logger.Warn("Could not find index for node", "node", n.Label, "index", i)
-					return
-				}
-				index.Type, ok = metricType(indexNode.Type)
-				if !ok {
-					logger.Warn("Can't handle index type on node", "node", n.Label, "index", i, "type", indexNode.Type)
-					return
-				}
-				index.FixedSize = indexNode.FixedSize
-				if n.ImpliedIndex && count+1 == len(n.Indexes) {
-					index.Implied = true
-				}
-				index.EnumValues = indexNode.EnumValues
-
-				// Convert (InetAddressType,InetAddress) to (InetAddress)
-				if subtype, ok := combinedTypes[index.Type]; ok {
-					switch subtype {
-					case prevType:
-						metric.Indexes = metric.Indexes[:len(metric.Indexes)-1]
-					case prev2Type:
-						metric.Indexes = metric.Indexes[:len(metric.Indexes)-2]
-					default:
-						logger.Warn("Can't handle index type on node, missing preceding", "node", n.Label, "type", index.Type, "missing", subtype)
-						return
-					}
-				}
-				prev2Type = prevType
-				prevType = indexNode.TextualConvention
-				metric.Indexes = append(metric.Indexes, index)
-			}
-			out.Metrics = append(out.Metrics, metric)
-		})
+		}
 	}
 
-	// Build an map of all oid targeted by a filter to access it easily later.
+	// Build a map of OIDs targeted by static filters.
 	filterMap := map[string][]string{}
-
 	for _, filter := range cfg.Filters.Static {
 		for _, oid := range filter.Targets {
-			n, ok := nameToNode[oid]
-			if ok {
-				oid = n.Oid
+			nd := m.Resolve(oid)
+			if nd != nil {
+				oid = nd.OID().String()
 			}
 			filterMap[oid] = filter.Indices
 		}
+	}
+
+	// Build a list of lookup labels which are required as index.
+	requiredAsIndex := []string{}
+	for _, lookup := range cfg.Lookups {
+		requiredAsIndex = append(requiredAsIndex, lookup.SourceIndexes...)
 	}
 
 	// Apply lookups.
 	for _, metric := range out.Metrics {
 		toDelete := []string{}
 
-		// Build a list of lookup labels which are required as index.
-		requiredAsIndex := []string{}
-		for _, lookup := range cfg.Lookups {
-			requiredAsIndex = append(requiredAsIndex, lookup.SourceIndexes...)
-		}
-
 		for _, lookup := range cfg.Lookups {
 			foundIndexes := 0
-			// See if all lookup indexes are present.
 			for _, index := range metric.Indexes {
 				for _, lookupIndex := range lookup.SourceIndexes {
 					if index.Labelname == lookupIndex {
@@ -446,67 +443,86 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 					}
 				}
 			}
-			if foundIndexes == len(lookup.SourceIndexes) {
-				if _, ok := nameToNode[lookup.Lookup]; !ok {
-					return nil, fmt.Errorf("unknown index '%s'", lookup.Lookup)
-				}
-				indexNode := getIndexNode(lookup.Lookup, nameToNode, metric.Oid)
-				typ, ok := metricType(indexNode.Type)
+			if foundIndexes != len(lookup.SourceIndexes) {
+				continue
+			}
+
+			lookupNode := m.Resolve(lookup.Lookup)
+			if lookupNode == nil {
+				return nil, fmt.Errorf("unknown index '%s'", lookup.Lookup)
+			}
+			lookupObj := findLookupObject(m, lookup.Lookup, metric.Oid, lookupNode)
+			if lookupObj == nil {
+				return nil, fmt.Errorf("unknown index '%s' (not an object)", lookup.Lookup)
+			}
+
+			lookupOID := lookupObj.Node().OID().String()
+			var typ string
+			if override, ok := typeOverrides[lookupOID]; ok {
+				typ, _ = metricType(override)
+			}
+			if typ == "" {
+				var ok bool
+				typ, ok = objectMetricType(lookupObj)
 				if !ok {
-					return nil, fmt.Errorf("unknown index type %s for %s", indexNode.Type, lookup.Lookup)
-				}
-				l := &config.Lookup{
-					Labelname: sanitizeLabelName(indexNode.Label),
-					Type:      typ,
-					Oid:       indexNode.Oid,
-				}
-				// Handle display_hint for lookup
-				if lookup.DisplayHint != "" {
-					if lookup.DisplayHint == "@mib" {
-						// Resolve @mib sentinel to the MIB's DISPLAY-HINT
-						if indexNode.Hint != "" {
-							l.DisplayHint = indexNode.Hint
-						} else {
-							logger.Warn("display_hint @mib specified but MIB has no DISPLAY-HINT", "lookup", lookup.Lookup)
-						}
-					} else {
-						l.DisplayHint = lookup.DisplayHint
-					}
-				}
-				for _, oldIndex := range lookup.SourceIndexes {
-					l.Labels = append(l.Labels, sanitizeLabelName(oldIndex))
-				}
-				metric.Lookups = append(metric.Lookups, l)
-
-				// If lookup label is used as source index in another lookup,
-				// we need to add this new label as another index.
-				if slices.Contains(requiredAsIndex, l.Labelname) {
-					idx := &config.Index{Labelname: l.Labelname, Type: l.Type}
-					metric.Indexes = append(metric.Indexes, idx)
-				}
-
-				// Make sure we walk the lookup OID(s).
-				if len(tableInstances[metric.Oid]) > 0 {
-					for _, index := range tableInstances[metric.Oid] {
-						needToWalk[indexNode.Oid+index+"."] = struct{}{}
-					}
-				} else {
-					needToWalk[indexNode.Oid] = struct{}{}
-				}
-				// We apply the same filter to metric.Oid if the lookup oid is filtered.
-				indices, found := filterMap[indexNode.Oid]
-				if found {
-					delete(needToWalk, metric.Oid)
-					for _, index := range indices {
-						needToWalk[metric.Oid+"."+index+"."] = struct{}{}
-					}
-				}
-				if lookup.DropSourceIndexes {
-					// Avoid leaving the old labelname around.
-					toDelete = append(toDelete, lookup.SourceIndexes...)
+					return nil, fmt.Errorf("unknown index type for %s", lookup.Lookup)
 				}
 			}
+
+			l := &config.Lookup{
+				Labelname: sanitizeLabelName(lookupObj.Name()),
+				Type:      typ,
+				Oid:       lookupOID,
+			}
+
+			// Handle display_hint for lookup.
+			if lookup.DisplayHint != "" {
+				if lookup.DisplayHint == "@mib" {
+					if h := lookupObj.EffectiveDisplayHint(); h != "" {
+						l.DisplayHint = h
+					} else {
+						logger.Warn("display_hint @mib specified but MIB has no DISPLAY-HINT", "lookup", lookup.Lookup)
+					}
+				} else {
+					l.DisplayHint = lookup.DisplayHint
+				}
+			}
+
+			for _, oldIndex := range lookup.SourceIndexes {
+				l.Labels = append(l.Labels, sanitizeLabelName(oldIndex))
+			}
+			metric.Lookups = append(metric.Lookups, l)
+
+			// If lookup label is used as source index in another lookup,
+			// we need to add this new label as another index.
+			if slices.Contains(requiredAsIndex, l.Labelname) {
+				idx := &config.Index{Labelname: l.Labelname, Type: l.Type}
+				metric.Indexes = append(metric.Indexes, idx)
+			}
+
+			// Make sure we walk the lookup OID(s).
+			if len(tableInstances[metric.Oid]) > 0 {
+				for _, index := range tableInstances[metric.Oid] {
+					needToWalk[lookupOID+index+"."] = struct{}{}
+				}
+			} else {
+				needToWalk[lookupOID] = struct{}{}
+			}
+
+			// Apply the same filter to metric.Oid if the lookup OID is filtered.
+			indices, found := filterMap[lookupOID]
+			if found {
+				delete(needToWalk, metric.Oid)
+				for _, index := range indices {
+					needToWalk[metric.Oid+"."+index+"."] = struct{}{}
+				}
+			}
+
+			if lookup.DropSourceIndexes {
+				toDelete = append(toDelete, lookup.SourceIndexes...)
+			}
 		}
+
 		for _, l := range toDelete {
 			metric.Lookups = append(metric.Lookups, &config.Lookup{
 				Labelname: sanitizeLabelName(l),
@@ -524,24 +540,34 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 	// Check that the object before an InetAddress is an InetAddressType.
 	// If not, change it to an OctetString.
 	for _, metric := range out.Metrics {
-		if metric.Type != "InetAddress" && metric.Type != "InetAddressMissingSize" {
+		if metric.Type != "InetAddress" {
 			continue
 		}
-		// Get previous oid.
-		oids := strings.Split(metric.Oid, ".")
-		i, _ := strconv.Atoi(oids[len(oids)-1])
-		oids[len(oids)-1] = strconv.Itoa(i - 1)
-		prevOid := strings.Join(oids, ".")
-		if prevObj, ok := nameToNode[prevOid]; !ok || prevObj.TextualConvention != "InetAddressType" {
+		metricOID, err := mib.ParseOID(metric.Oid)
+		if err != nil || len(metricOID) == 0 {
+			continue
+		}
+		prevOID := make(mib.OID, len(metricOID))
+		copy(prevOID, metricOID)
+		prevOID[len(prevOID)-1]--
+
+		prevNode := m.NodeByOID(prevOID)
+		prevIsInetAddrType := false
+		if prevNode != nil {
+			if prevObj := prevNode.Object(); prevObj != nil {
+				prevIsInetAddrType = objectTCName(prevObj) == "InetAddressType"
+			}
+		}
+		if !prevIsInetAddrType {
 			metric.Type = "OctetString"
 		} else {
-			// Make sure the InetAddressType is included.
+			prevOIDStr := prevOID.String()
 			if len(tableInstances[metric.Oid]) > 0 {
 				for _, index := range tableInstances[metric.Oid] {
-					needToWalk[prevOid+index+"."] = struct{}{}
+					needToWalk[prevOIDStr+index+"."] = struct{}{}
 				}
 			} else {
-				needToWalk[prevOid] = struct{}{}
+				needToWalk[prevOIDStr] = struct{}{}
 			}
 		}
 	}
@@ -564,11 +590,13 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 			}
 			if params.DisplayHint != "" {
 				if params.DisplayHint == "@mib" {
-					// Resolve @mib sentinel to the MIB's DISPLAY-HINT
-					if n, ok := nameToNode[metric.Oid]; ok && n.Hint != "" {
-						metric.DisplayHint = n.Hint
-					} else {
-						logger.Warn("display_hint @mib specified but MIB has no DISPLAY-HINT", "metric", metric.Oid)
+					nd := m.Resolve(metric.Oid)
+					if nd != nil {
+						if obj := nd.Object(); obj != nil && obj.EffectiveDisplayHint() != "" {
+							metric.DisplayHint = obj.EffectiveDisplayHint()
+						} else {
+							logger.Warn("display_hint @mib specified but MIB has no DISPLAY-HINT", "metric", metric.Oid)
+						}
 					}
 				} else {
 					metric.DisplayHint = params.DisplayHint
@@ -577,13 +605,12 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 		}
 	}
 
-	// Apply filters.
+	// Apply static filters.
 	for _, filter := range cfg.Filters.Static {
-		// Delete the oid targeted by the filter, as we won't walk the whole table.
 		for _, oid := range filter.Targets {
-			n, ok := nameToNode[oid]
-			if ok {
-				oid = n.Oid
+			nd := m.Resolve(oid)
+			if nd != nil {
+				oid = nd.OID().String()
 			}
 			delete(needToWalk, oid)
 			for _, index := range filter.Indices {
@@ -594,11 +621,11 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 
 	out.Filters = cfg.Filters.Dynamic
 
+	// Separate Walk and Get OIDs.
 	oids := []string{}
 	for k := range needToWalk {
 		oids = append(oids, k)
 	}
-	// Remove redundant OIDs and separate Walk and Get OIDs.
 	for _, k := range minimizeOids(oids) {
 		if k[len(k)-1:] == "." {
 			out.Get = append(out.Get, k[:len(k)-1])
@@ -607,6 +634,51 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 		}
 	}
 	return out, nil
+}
+
+// findLookupObject resolves a lookup name to a *mib.Object, preferring one in
+// the same table as the metric OID for disambiguation of duplicate names.
+func findLookupObject(m *mib.Mib, lookupName string, metricOIDStr string, lookupNode *mib.Node) *mib.Object {
+	obj := lookupNode.Object()
+	if obj == nil {
+		return nil
+	}
+	// Qualified names are already unambiguous.
+	if strings.Contains(lookupName, "::") {
+		return obj
+	}
+	// Check if the resolved object is already in the same subtree.
+	metricOIDParts := strings.Split(metricOIDStr, ".")
+	if len(metricOIDParts) > 1 {
+		prefix := strings.Join(metricOIDParts[:len(metricOIDParts)-1], ".")
+		if strings.HasPrefix(obj.Node().OID().String(), prefix) {
+			return obj
+		}
+		// Search for an alternative in the same subtree.
+		for _, candidate := range m.Objects() {
+			if candidate.Name() != lookupNode.Name() {
+				continue
+			}
+			if strings.HasPrefix(candidate.Node().OID().String(), prefix) {
+				return candidate
+			}
+		}
+	}
+	return obj
+}
+
+// Reduce a set of overlapping OID subtrees.
+func minimizeOids(oids []string) []string {
+	sort.Strings(oids)
+	prevOid := ""
+	minimized := []string{}
+	for _, oid := range oids {
+		if !strings.HasPrefix(oid+".", prevOid) || prevOid == "" {
+			minimized = append(minimized, oid)
+			prevOid = oid + "."
+		}
+	}
+	return minimized
 }
 
 var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
