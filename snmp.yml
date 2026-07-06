@@ -37506,33 +37506,33 @@ modules:
         type: DisplayString
       - labelname: panVsysId
         type: gauge
-    - name: ifIndex
+    - name: panIfIndex
       oid: 1.3.6.1.4.1.25461.2.1.2.3.11.1.1
       type: gauge
       help: Index of the interface - 1.3.6.1.4.1.25461.2.1.2.3.11.1.1
       indexes:
-      - labelname: ifIndex
+      - labelname: panIfIndex
         type: gauge
-    - name: ifDescr
+    - name: panIfDescr
       oid: 1.3.6.1.4.1.25461.2.1.2.3.11.1.2
       type: DisplayString
       help: Description (name) of the interface - 1.3.6.1.4.1.25461.2.1.2.3.11.1.2
       indexes:
-      - labelname: ifIndex
+      - labelname: panIfIndex
         type: gauge
     - name: panIfActiveTcpCps
       oid: 1.3.6.1.4.1.25461.2.1.2.3.11.1.3
       type: gauge
       help: Number of active TCP connections per second for this interface. - 1.3.6.1.4.1.25461.2.1.2.3.11.1.3
       indexes:
-      - labelname: ifIndex
+      - labelname: panIfIndex
         type: gauge
     - name: panIfActiveUdpCps
       oid: 1.3.6.1.4.1.25461.2.1.2.3.11.1.4
       type: gauge
       help: Number of active UDP connections per second for this interface. - 1.3.6.1.4.1.25461.2.1.2.3.11.1.4
       indexes:
-      - labelname: ifIndex
+      - labelname: panIfIndex
         type: gauge
     - name: panIfActiveOtherIpCps
       oid: 1.3.6.1.4.1.25461.2.1.2.3.11.1.5
@@ -37540,12 +37540,64 @@ modules:
       help: Number of active Other IP connections per second for this interface. -
         1.3.6.1.4.1.25461.2.1.2.3.11.1.5
       indexes:
-      - labelname: ifIndex
+      - labelname: panIfIndex
         type: gauge
     - name: panSessionCps
       oid: 1.3.6.1.4.1.25461.2.1.2.3.12
       type: gauge
       help: Total number of active TCP connections per second. - 1.3.6.1.4.1.25461.2.1.2.3.12
+    - name: panPethPsePortPowerSignalClassification
+      oid: 1.3.6.1.4.1.25461.2.1.2.3.13.1.1
+      type: gauge
+      help: Power Signal Classification - 1.3.6.1.4.1.25461.2.1.2.3.13.1.1
+      indexes:
+      - labelname: pethPsePortGroupIndex
+        type: gauge
+      - labelname: pethPsePortIndex
+        type: gauge
+      enum_values:
+        0: classUNKOWN
+        1: class1
+        2: class2
+        3: class3
+        4: class4
+        5: classUNDEF
+        6: class0
+        7: classOVERCURR
+        8: class5SS
+        9: class6SS
+        10: class7SS
+        11: class8SS
+        12: class4TYPE1
+        13: class5ds
+        14: classrsv
+        15: classMismatch
+    - name: panPethPsePortPowerSpareClassification
+      oid: 1.3.6.1.4.1.25461.2.1.2.3.13.1.2
+      type: gauge
+      help: Power Spare Classification - 1.3.6.1.4.1.25461.2.1.2.3.13.1.2
+      indexes:
+      - labelname: pethPsePortGroupIndex
+        type: gauge
+      - labelname: pethPsePortIndex
+        type: gauge
+      enum_values:
+        0: classUNKOWN
+        1: class1
+        2: class2
+        3: class3
+        4: class4
+        5: classUNDEF
+        6: class0
+        7: classOVERCURR
+        8: class5SS
+        9: class6SS
+        10: class7SS
+        11: class8SS
+        12: class4TYPE1
+        13: class5ds
+        14: classrsv
+        15: classMismatch
     - name: panGPGWUtilizationPct
       oid: 1.3.6.1.4.1.25461.2.1.2.5.1.1
       type: gauge
