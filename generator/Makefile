@@ -51,7 +51,7 @@ KEMP_LM_URL       := https://kemptechnologies.com/files/packages/current/LM_mibs
 MIKROTIK_URL      := https://download.mikrotik.com/routeros/7.22/mikrotik.mib
 NEC_URL           := https://jpn.nec.com/univerge/ix/Manual/MIB
 NET_SNMP_URL      := https://raw.githubusercontent.com/net-snmp/net-snmp/v5.9/mibs
-PALOALTO_URL      := https://docs.paloaltonetworks.com/content/dam/techdocs/en_US/zip/snmp-mib/pan-10-0-snmp-mib-modules.zip
+PALOALTO_URL      := https://docs.paloaltonetworks.com/content/dam/techdocs/en_US/zip/snmp-mib/pan-11-1-snmp-mib-modules.zip
 PRINTER_URL       := https://ftp.pwg.org/pub/pwg/pmp/mibs/rfc3805b.mib
 SERVERTECH_URL    := 'https://cdn10.servertech.com/assets/documents/documents/817/original/Sentry3.mib'
 SERVERTECH4_URL   := 'https://cdn10.servertech.com/assets/documents/documents/815/original/Sentry4.mib'
@@ -61,6 +61,7 @@ UBNT_AIROS_OLD_URL:= https://raw.githubusercontent.com/pgmillon/observium/refs/h
 UBNT_AIRFIBER_URL := https://dl.ubnt.com/firmwares/airfiber5X/v4.1.0/UBNT-MIB.txt
 UBNT_DL_URL       := http://dl.ubnt-ut.com/snmp
 UPS_MIB_URL       := https://raw.githubusercontent.com/pgmillon/observium/refs/heads/master/mibs/UPS-MIB
+POWER_ETHERNET_URL:= https://raw.githubusercontent.com/pgmillon/observium/refs/heads/master/mibs/POWER-ETHERNET-MIB
 RARITAN_URL       := https://cdn.raritan.com/download/PX/v1.5.20/PDU-MIB.txt
 RARITAN2_URL      := https://cdn1.raritan.com/download/pdu-g2/4.3.10/PDU2_MIB_4.3.10_51837.txt
 RARITAN_AM_URL    := https://cdn1.raritan.com/download/pdu-g2/4.3.10/AssetManagement_MIB_4.3.10_51837.txt
@@ -160,6 +161,7 @@ mibs: \
   $(MIBDIR)/MIKROTIK-MIB \
   $(MIBDIR)/.net-snmp \
   $(MIBDIR)/.paloalto_panos \
+  $(MIBDIR)/POWER-ETHERNET-MIB \
   $(MIBDIR)/PICO-IPSEC-FLOW-MONITOR-MIB.txt \
   $(MIBDIR)/PICO-SMI-ID-MIB.txt \
   $(MIBDIR)/PICO-SMI-MIB.txt \
@@ -331,6 +333,10 @@ $(MIBDIR)/.paloalto_panos:
 	@unzip -j -d $(MIBDIR) $(TMP)
 	@rm -v $(TMP)
 	@touch $(MIBDIR)/.paloalto_panos
+
+$(MIBDIR)/POWER-ETHERNET-MIB:
+	@echo ">> Downloading POWER-ETHERNET-MIB (PAN-COMMON-MIB dependency)"
+	@curl $(CURL_OPTS) -o $(MIBDIR)/POWER-ETHERNET-MIB $(POWER_ETHERNET_URL)
 
 $(MIBDIR)/PRINTER-MIB-V2.txt:
 	@echo ">> Downloading Printer MIB v2"
