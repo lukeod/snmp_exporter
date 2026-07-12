@@ -209,7 +209,6 @@ func ScrapeTarget(ctx context.Context, snmp scraper.SNMPScraper, target string, 
 	workerResults := make([][]gosnmp.SnmpPDU, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		i := i // capture loop variable for closure
 		g.Go(func() error {
 			worker := snmp.Clone()
 			// Propagate the cancellable context so workers abort on error.
@@ -417,10 +416,9 @@ func (c Collector) collect(ctx context.Context, ch chan<- prometheus.Metric, log
 	)
 	client.SetOptions(
 		// Set the metrics options.
-		// NOTE: OnSent/OnRecv/OnRetry are only set on the parent client, not on
-		// per-subtree clones (Clone() intentionally omits them). So
-		// snmp_scrape_packets_sent/retried counts GET-phase packets only when
-		// walk_concurrency > 1. This is a known limitation documented here.
+		// Clone() replays this option onto per-subtree clones, giving each its
+		// own `sent` timestamp while packets/retries stay shared; both are
+		// atomic because clones invoke these callbacks concurrently.
 		func(g *gosnmp.GoSNMP) {
 			var sent time.Time
 			g.OnSent = func(x *gosnmp.GoSNMP) {
@@ -462,23 +460,19 @@ func (c Collector) collect(ctx context.Context, ch chan<- prometheus.Metric, log
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc("snmp_scrape_walk_duration_seconds", "Time SNMP walk/bulkwalk took.", nil, moduleLabel),
 		prometheus.GaugeValue,
-		time.Since(start).Seconds(),
-	)
+		time.Since(start).Seconds())
 	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc("snmp_scrape_packets_sent", "Packets sent for get and bulkget (walk packets not counted when walk_concurrency > 1).", nil, moduleLabel),
+		prometheus.NewDesc("snmp_scrape_packets_sent", "Packets sent for get, bulkget, and walk; including retries.", nil, moduleLabel),
 		prometheus.GaugeValue,
-		float64(packets.Load()),
-	)
+		float64(packets.Load()))
 	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc("snmp_scrape_packets_retried", "Packets retried for get and bulkget (walk packets not counted when walk_concurrency > 1).", nil, moduleLabel),
+		prometheus.NewDesc("snmp_scrape_packets_retried", "Packets retried for get, bulkget, and walk.", nil, moduleLabel),
 		prometheus.GaugeValue,
-		float64(retries.Load()),
-	)
+		float64(retries.Load()))
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc("snmp_scrape_pdus_returned", "PDUs returned from get, bulkget, and walk.", nil, moduleLabel),
 		prometheus.GaugeValue,
-		float64(len(results.pdus)),
-	)
+		float64(len(results.pdus)))
 
 	oidToPdu := make(map[string]gosnmp.SnmpPDU, len(results.pdus))
 	for _, pdu := range results.pdus {
@@ -509,8 +503,7 @@ func (c Collector) collect(ctx context.Context, ch chan<- prometheus.Metric, log
 	ch <- prometheus.MustNewConstMetric(
 		prometheus.NewDesc("snmp_scrape_duration_seconds", "Total SNMP time scrape took (walk and processing).", nil, moduleLabel),
 		prometheus.GaugeValue,
-		time.Since(start).Seconds(),
-	)
+		time.Since(start).Seconds())
 }
 
 // Collect implements Prometheus.Collector.
@@ -656,8 +649,7 @@ func parseDateAndTime(pdu *gosnmp.SnmpPDU) (float64, error) {
 		int(v[5]),
 		int(v[6]),
 		int(v[7])*1e+8,
-		tz,
-	)
+		tz)
 	return float64(t.Unix()), nil
 }
 

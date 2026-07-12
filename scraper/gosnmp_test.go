@@ -17,42 +17,64 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gosnmp/gosnmp"
 	"github.com/prometheus/common/promslog"
 )
 
-func TestHostOnly(t *testing.T) {
+func TestZeroPort(t *testing.T) {
 	cases := []struct {
 		input string
 		want  string
 	}{
 		{"", ""},
 		{"192.168.1.1", "192.168.1.1"},
-		{"192.168.1.1:12345", "192.168.1.1"},
+		{"192.168.1.1:12345", "192.168.1.1:0"},
+		{"192.168.1.1:", "192.168.1.1:0"},
 		{"::1", "::1"},
-		{"[::1]:12345", "::1"},
-		{"0.0.0.0:9161", "0.0.0.0"},
+		{"[::1]:12345", "[::1]:0"},
+		{"0.0.0.0:9161", "0.0.0.0:0"},
 		{"somehost", "somehost"},
-		{"somehost:161", "somehost"},
+		{"somehost:161", "somehost:0"},
 	}
 	for _, c := range cases {
 		t.Run(c.input, func(t *testing.T) {
-			got := hostOnly(c.input)
+			got := zeroPort(c.input)
 			if got != c.want {
-				t.Errorf("hostOnly(%q) = %q, want %q", c.input, got, c.want)
+				t.Errorf("zeroPort(%q) = %q, want %q", c.input, got, c.want)
 			}
 		})
 	}
 }
 
-func TestCloneStripsLocalAddrPort(t *testing.T) {
+func TestCloneZeroesLocalAddrPort(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	w, err := NewGoSNMP(logger, "192.0.2.1", "0.0.0.0:9161", false)
 	if err != nil {
 		t.Fatalf("NewGoSNMP: %v", err)
 	}
 	clone := w.Clone().(*GoSNMPWrapper)
-	if clone.c.LocalAddr != "0.0.0.0" {
-		t.Errorf("Clone().LocalAddr = %q, want %q", clone.c.LocalAddr, "0.0.0.0")
+	if clone.c.LocalAddr != "0.0.0.0:0" {
+		t.Errorf("Clone().LocalAddr = %q, want %q", clone.c.LocalAddr, "0.0.0.0:0")
+	}
+}
+
+func TestCloneReplaysSetOptions(t *testing.T) {
+	logger := promslog.NewNopLogger()
+	w, err := NewGoSNMP(logger, "192.0.2.1", "", false)
+	if err != nil {
+		t.Fatalf("NewGoSNMP: %v", err)
+	}
+	calls := 0
+	w.SetOptions(func(g *gosnmp.GoSNMP) {
+		g.OnSent = func(*gosnmp.GoSNMP) { calls++ }
+	})
+	clone := w.Clone().(*GoSNMPWrapper)
+	if clone.c.OnSent == nil {
+		t.Fatal("Clone().OnSent is nil, want SetOptions replayed onto the clone")
+	}
+	clone.c.OnSent(clone.c)
+	if calls != 1 {
+		t.Errorf("clone OnSent incremented counter %d times, want 1", calls)
 	}
 }
 

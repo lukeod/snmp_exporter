@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestPduToSample(t *testing.T) {
 					"Extension": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(".*"),
+								regexp.MustCompile(".*"),
 							},
 							Value: "5",
 						},
@@ -82,7 +83,7 @@ func TestPduToSample(t *testing.T) {
 					"Extension": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(".*"),
+								regexp.MustCompile(".*"),
 							},
 							Value: "",
 						},
@@ -105,7 +106,7 @@ func TestPduToSample(t *testing.T) {
 					"Extension": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile("(will_not_match)"),
+								regexp.MustCompile("(will_not_match)"),
 							},
 							Value: "",
 						},
@@ -128,7 +129,7 @@ func TestPduToSample(t *testing.T) {
 					"Status": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(".*"),
+								regexp.MustCompile(".*"),
 							},
 							Value: "5",
 						},
@@ -153,7 +154,7 @@ func TestPduToSample(t *testing.T) {
 					"Blank": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile("^XXXX$"),
+								regexp.MustCompile("^XXXX$"),
 							},
 							Value: "4",
 						},
@@ -161,7 +162,7 @@ func TestPduToSample(t *testing.T) {
 					"Extension": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(".*"),
+								regexp.MustCompile(".*"),
 							},
 							Value: "5",
 						},
@@ -169,19 +170,19 @@ func TestPduToSample(t *testing.T) {
 					"MultipleRegexes": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile("^XXXX$"),
+								regexp.MustCompile("^XXXX$"),
 							},
 							Value: "123",
 						},
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile("123.*"),
+								regexp.MustCompile("123.*"),
 							},
 							Value: "999",
 						},
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(".*"),
+								regexp.MustCompile(".*"),
 							},
 							Value: "777",
 						},
@@ -189,7 +190,7 @@ func TestPduToSample(t *testing.T) {
 					"Template": {
 						{
 							Regex: config.Regexp{
-								Regexp: regexp.MustCompile(`(\d.\d+)`),
+								regexp.MustCompile(`(\d.\d+)`),
 							},
 							Value: "$1",
 						},
@@ -217,7 +218,7 @@ func TestPduToSample(t *testing.T) {
 				RegexpExtracts: map[string][]config.RegexpExtract{
 					"": {
 						{
-							Regex: config.Regexp{Regexp: regexp.MustCompile(`(.*)`)},
+							Regex: config.Regexp{regexp.MustCompile(`(.*)`)},
 							Value: "$1",
 						},
 					},
@@ -242,7 +243,7 @@ func TestPduToSample(t *testing.T) {
 				RegexpExtracts: map[string][]config.RegexpExtract{
 					"": {
 						{
-							Regex: config.Regexp{Regexp: regexp.MustCompile(`(.*)`)},
+							Regex: config.Regexp{regexp.MustCompile(`(.*)`)},
 							Value: "$1",
 						},
 					},
@@ -432,7 +433,7 @@ func TestPduToSample(t *testing.T) {
 				Help:    "Help string",
 				Indexes: []*config.Index{{Labelname: "foo", Type: "DisplayString"}},
 				RegexpExtracts: map[string][]config.RegexpExtract{
-					"": {{Value: "1", Regex: config.Regexp{Regexp: regexp.MustCompile(".*")}}},
+					"": {{Value: "1", Regex: config.Regexp{regexp.MustCompile(".*")}}},
 				},
 			},
 			oidToPdu:        make(map[string]gosnmp.SnmpPDU),
@@ -1739,6 +1740,19 @@ func TestScrapeTargetParallelWalk(t *testing.T) {
 		if !found {
 			t.Errorf("missing PDU %s in results", want)
 		}
+	}
+
+	// Each subtree must be walked exactly once across all clones; the mock
+	// shares its call recording with its clones.
+	walked := mock.CallWalk()
+	sort.Strings(walked)
+	wantWalked := []string{
+		"1.3.6.1.2.1.2.2.1.7",
+		"1.3.6.1.2.1.2.2.1.8",
+		"1.3.6.1.2.1.31.1.1.1.15",
+	}
+	if !reflect.DeepEqual(walked, wantWalked) {
+		t.Errorf("walked subtrees %v, want each of %v exactly once", walked, wantWalked)
 	}
 }
 

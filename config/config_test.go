@@ -56,3 +56,32 @@ modules:
 		t.Error("BUG: module1 and module2 share the same Retries pointer!")
 	}
 }
+
+func TestWalkConcurrencyValidation(t *testing.T) {
+	cases := []struct {
+		concurrency string
+		shouldErr   bool
+	}{
+		{"0", false},
+		{"1", false},
+		{"4", false},
+		{"-1", true},
+	}
+	for _, c := range cases {
+		t.Run(c.concurrency, func(t *testing.T) {
+			content := `
+modules:
+  module1:
+    walk_concurrency: ` + c.concurrency + `
+`
+			cfg := &Config{}
+			err := yaml.UnmarshalStrict([]byte(content), cfg)
+			if c.shouldErr && err == nil {
+				t.Fatalf("expected error for walk_concurrency %s, got nil", c.concurrency)
+			}
+			if !c.shouldErr && err != nil {
+				t.Fatalf("unexpected error for walk_concurrency %s: %v", c.concurrency, err)
+			}
+		})
+	}
+}

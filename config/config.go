@@ -147,7 +147,13 @@ func (c *Module) UnmarshalYAML(unmarshal func(any) error) error {
 		c.WalkParams.Retries = &retries
 	}
 	type plain Module
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.WalkParams.WalkConcurrency < 0 {
+		return fmt.Errorf("walk_concurrency must not be negative, got %d", c.WalkParams.WalkConcurrency)
+	}
+	return nil
 }
 
 // ConfigureSNMP sets the various version and auth settings.
