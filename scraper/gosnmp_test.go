@@ -64,17 +64,57 @@ func TestCloneReplaysSetOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGoSNMP: %v", err)
 	}
-	calls := 0
+	execs := 0
 	w.SetOptions(func(g *gosnmp.GoSNMP) {
-		g.OnSent = func(*gosnmp.GoSNMP) { calls++ }
+		execs++
+		g.OnSent = func(*gosnmp.GoSNMP) {}
 	})
+	if execs != 1 {
+		t.Fatalf("option function executed %d times after SetOptions, want 1", execs)
+	}
 	clone := w.Clone().(*GoSNMPWrapper)
+	// The option function must run again for the clone (replay), not have its
+	// resulting callback copied, so per-connection state in the closure is
+	// fresh for each clone.
+	if execs != 2 {
+		t.Errorf("option function executed %d times after Clone, want 2 (replayed)", execs)
+	}
 	if clone.c.OnSent == nil {
 		t.Fatal("Clone().OnSent is nil, want SetOptions replayed onto the clone")
 	}
-	clone.c.OnSent(clone.c)
-	if calls != 1 {
-		t.Errorf("clone OnSent incremented counter %d times, want 1", calls)
+}
+
+func TestCloneRetainsDiscoveredSecurityParameters(t *testing.T) {
+	logger := promslog.NewNopLogger()
+	w, err := NewGoSNMP(logger, "192.0.2.1", "", false)
+	if err != nil {
+		t.Fatalf("NewGoSNMP: %v", err)
+	}
+	// Configure v3 auth the way collect() does: an option function that
+	// assigns fresh security parameters.
+	w.SetOptions(func(g *gosnmp.GoSNMP) {
+		g.Version = gosnmp.Version3
+		g.SecurityModel = gosnmp.UserSecurityModel
+		g.SecurityParameters = &gosnmp.UsmSecurityParameters{UserName: "user"}
+	})
+	// Simulate engine discovery having happened on the parent connection.
+	parentUsm := w.c.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	parentUsm.AuthoritativeEngineID = "engine-id"
+	parentUsm.AuthoritativeEngineBoots = 7
+
+	clone := w.Clone().(*GoSNMPWrapper)
+	cloneUsm, ok := clone.c.SecurityParameters.(*gosnmp.UsmSecurityParameters)
+	if !ok {
+		t.Fatalf("clone SecurityParameters is %T, want *gosnmp.UsmSecurityParameters", clone.c.SecurityParameters)
+	}
+	if cloneUsm == parentUsm {
+		t.Fatal("clone shares the parent's SecurityParameters, want an independent copy")
+	}
+	if cloneUsm.AuthoritativeEngineID != "engine-id" {
+		t.Errorf("clone AuthoritativeEngineID = %q, want %q (discovered state lost by option replay)", cloneUsm.AuthoritativeEngineID, "engine-id")
+	}
+	if cloneUsm.AuthoritativeEngineBoots != 7 {
+		t.Errorf("clone AuthoritativeEngineBoots = %d, want 7", cloneUsm.AuthoritativeEngineBoots)
 	}
 }
 

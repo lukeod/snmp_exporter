@@ -143,11 +143,15 @@ func (g *GoSNMPWrapper) Clone() SNMPScraper {
 		Control:                     g.c.Control,
 		TrapSecurityParametersTable: g.c.TrapSecurityParametersTable,
 	}
+	w := &GoSNMPWrapper{c: clone, logger: g.logger}
+	w.SetOptions(g.optFns...)
+	// Restore the security parameters after the replay: the recorded options
+	// include the auth setup, which assigns fresh USM parameters. Copying the
+	// parent's parameters last preserves the discovered engine ID and the
+	// localized keys, so clones skip SNMPv3 engine discovery.
 	if g.c.SecurityParameters != nil {
 		clone.SecurityParameters = g.c.SecurityParameters.Copy()
 	}
-	w := &GoSNMPWrapper{c: clone, logger: g.logger}
-	w.SetOptions(g.optFns...)
 	return w
 }
 

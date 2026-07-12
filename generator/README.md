@@ -126,6 +126,9 @@ modules:
                          # Increasing this reduces wall-clock scrape time on devices with large tables
                          # (e.g. walk_concurrency: 4 for switches with hundreds of interfaces).
                          # Higher values increase SNMP agent load — tune carefully per device type.
+                         # Values above 1 open extra connections which bind the --snmp.source-address
+                         # IP but always use OS-assigned ephemeral source ports; a fixed source port
+                         # in --snmp.source-address is not applied to this extra walk traffic.
 
     allow_nonincreasing_oids: false # Do not check whether the returned OIDs are increasing, defaults to false
                                     # Some agents return OIDs out of order, but can complete the walk anyway.
